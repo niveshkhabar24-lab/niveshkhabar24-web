@@ -1,5 +1,3 @@
-import './globals.css';
-
 export const metadata = {
   title: {
     default: 'NiveshKhabar24 - IPO GMP Today in Hindi, Live Subscription & Allotment Status',
