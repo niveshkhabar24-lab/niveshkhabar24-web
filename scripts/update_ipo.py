@@ -264,7 +264,7 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
     blog_paragraphs = [
         f"1. कंपनी प्रोफ़ाइल और बिज़नेस मॉडल: {name} IPO भारतीय शेयर बाजार के {cat} प्लेटफॉर्म पर निवेश के लिए खुला है। {sector_line} यह इश्यू {open_dt} को बोली लगाने के लिए खुलेगा और {close_dt} को बंद होगा।",
         f"2. इश्यू साइज़ और फंड का उपयोग: {f'इस पब्लिक इश्यू का कुल आकार लगभग ₹{size_cr} करोड़ है।' if size_cr > 0 else ''} {issue_structure} {purpose_line}".strip(),
-        f"3. लॉट साइज़ और निवेश की राशि: {lot_text} {f'इस इश्यू का आधिकारिक रजिस्ट्रार {pdf_info[\"registrar\"]} है।' if pdf_info.get('registrar') else ''}".strip(),
+        f"3. लॉट साइज़ और निवेश की राशि: {lot_text} {('इस इश्यू का आधिकारिक रजिस्ट्रार ' + pdf_info['registrar'] + ' है।') if pdf_info.get('registrar') else ''}".strip(),
         f"4. GMP और सब्सक्रिप्शन विश्लेषण: {gmp_text} {f'अब तक यह इश्यू कुल {total_sub}x सब्सक्राइब हो चुका है।' if total_sub > 0 else ''}".strip(),
     ]
 
