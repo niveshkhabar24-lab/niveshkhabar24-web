@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests supabase beautifulsoup4
+          pip install requests supabase beautifulsoup4 pypdf
 
       - name: Run IPO GMP Sync Script
         env:
