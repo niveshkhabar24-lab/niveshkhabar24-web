@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
 
 function formatShortDate(dateStr) {
   if (!dateStr) return 'Announced Soon';
@@ -10,6 +10,142 @@ function formatShortDate(dateStr) {
   return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+function FinancialsChartSection({ companyName, financials }) {
+  const rows = financials && Array.isArray(financials.rows) ? financials.rows : [];
+  const unit = financials?.unit || '₹ Crore';
+
+  if (rows.length === 0) {
+    return (
+      <section className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2">
+        <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+          📊 {companyName} — 3-Year Financial Performance (Revenue &amp; Profit)
+        </h3>
+        <p className="text-xs sm:text-sm text-slate-600">
+          इस कंपनी के पिछले 3 वित्तीय वर्षों के ऑडिटेड राजस्व (Revenue) और शुद्ध मुनाफ़े (PAT) के आंकड़े RHP फाइलिंग
+          से अपडेट किए जा रहे हैं।
+        </p>
+      </section>
+    );
+  }
+
+  const maxVal = Math.max(...rows.map((r) => Math.max(Number(r.revenue) || 0, Number(r.profit) || 0, 1)));
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-5 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+        <div>
+          <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+            📊 {companyName} — 3-Year Revenue &amp; Profit Chart ({unit})
+          </h3>
+          <p className="text-xs text-slate-500">
+            RHP / DRHP ऑफर दस्तावेज़ के अनुसार कंपनी की वित्तीय प्रगति
+          </p>
+        </div>
+        <div className="flex items-center gap-4 text-xs font-semibold">
+          <span className="flex items-center gap-1.5 text-teal-800">
+            <span className="w-3 h-3 rounded-xs bg-teal-600 inline-block" /> Total Revenue
+          </span>
+          <span className="flex items-center gap-1.5 text-emerald-800">
+            <span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block" /> Profit After Tax (PAT)
+          </span>
+        </div>
+      </div>
+
+      {/* Visual Bar Chart */}
+      <div className="grid grid-cols-3 gap-4 sm:gap-8 pt-4 pb-2 px-2 sm:px-6 bg-slate-50/70 rounded-xl border border-slate-100">
+        {rows.map((item, idx) => {
+          const rev = Number(item.revenue) || 0;
+          const pat = Number(item.profit) || 0;
+          const revHeight = Math.max(Math.round((rev / maxVal) * 140), 12);
+          const patHeight = pat > 0 ? Math.max(Math.round((pat / maxVal) * 140), 10) : 6;
+
+          return (
+            <div key={idx} className="flex flex-col items-center justify-end space-y-2">
+              <div className="flex items-end justify-center gap-2 sm:gap-3 h-40 w-full">
+                {/* Revenue Bar */}
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] sm:text-xs font-bold text-teal-800 mb-1">
+                    {rev.toLocaleString('en-IN')}
+                  </span>
+                  <div
+                    style={{ height: `${revHeight}px` }}
+                    className="w-7 sm:w-10 bg-teal-600 rounded-t-md transition-all"
+                  />
+                </div>
+
+                {/* Profit Bar */}
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] sm:text-xs font-bold text-emerald-800 mb-1">
+                    {pat.toLocaleString('en-IN')}
+                  </span>
+                  <div
+                    style={{ height: `${patHeight}px` }}
+                    className={`w-7 sm:w-10 rounded-t-md transition-all ${
+                      pat >= 0 ? 'bg-emerald-500' : 'bg-rose-500'
+                    }`}
+                  />
+                </div>
+              </div>
+              <span className="text-xs sm:text-sm font-extrabold text-slate-800 border-t border-slate-200 w-full text-center pt-1.5">
+                {item.year}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Financial Data Table */}
+      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+        <table className="w-full text-xs sm:text-sm text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th className="py-2.5 px-4 font-bold">Financial Metric ({unit})</th>
+              {rows.map((r, i) => (
+                <th key={i} className="py-2.5 px-4 font-bold text-right">
+                  {r.year}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            <tr>
+              <td className="py-2.5 px-4 font-semibold text-slate-700">Total Revenue / Income</td>
+              {rows.map((r, i) => (
+                <td key={i} className="py-2.5 px-4 text-right font-semibold text-slate-900">
+                  {Number(r.revenue || 0).toLocaleString('en-IN')}
+                </td>
+              ))}
+            </tr>
+            <tr className="bg-slate-50/70">
+              <td className="py-2.5 px-4 font-semibold text-slate-700">Profit After Tax (PAT)</td>
+              {rows.map((r, i) => (
+                <td
+                  key={i}
+                  className={`py-2.5 px-4 text-right font-bold ${
+                    Number(r.profit || 0) >= 0 ? 'text-emerald-700' : 'text-rose-600'
+                  }`}
+                >
+                  {Number(r.profit || 0).toLocaleString('en-IN')}
+                </td>
+              ))}
+            </tr>
+            {rows.some((r) => Number(r.net_worth || 0) > 0) && (
+              <tr>
+                <td className="py-2.5 px-4 font-semibold text-slate-700">Net Worth</td>
+                {rows.map((r, i) => (
+                  <td key={i} className="py-2.5 px-4 text-right text-slate-800">
+                    {Number(r.net_worth || 0) > 0 ? Number(r.net_worth).toLocaleString('en-IN') : '—'}
+                  </td>
+                ))}
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -17,8 +153,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
   const upperPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
   const lotSize = Number(ipo.lot_size) || 0;
   const gmp = Number(ipo.gmp_price) || 0;
-  const issueSize = Number(ipo.issue_size_cr) || 0;
-  const minInvestment = upperPrice > 0 && lotSize > 0 ? upperPrice * lotSize : 0;
 
   const pdfUrl = ipo.rhp_url || ipo.drhp_url || '';
   const hasDirectPdf = Boolean(pdfUrl);
@@ -31,15 +165,21 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
     ? ipo.pros_list.split('|').map((s) => s.trim()).filter(Boolean)
     : [
         `${ipo.category || 'Mainboard'} सेगमेंट में कंपनी की मज़बूत बाज़ार स्थिति और विस्तार की क्षमता।`,
+        'स्थापित ग्राहक आधार और अनुभवी प्रमोटर टीम कंपनी के दीर्घकालिक विकास को सहारा देती है।',
+        'उद्योग में बढ़ती मांग के कारण आगामी वित्तीय वर्षों में राजस्व वृद्धि की संभावना।',
+        'संतुलित पूंजी संरचना और स्पष्ट व्यवसाय विस्तार योजना।',
         gmp > 0
           ? `ग्रे मार्केट में +₹${gmp} का सकारात्मक प्रीमियम शुरुआती लिस्टिंग गेन का संकेत दे रहा है।`
-          : 'दीर्घकालिक निवेशकों के लिए कंपनी के बिज़नेस मॉडल और वित्तीय परिणामों का अध्ययन महत्वपूर्ण है।',
+          : 'रिटेल निवेशकों के लिए न्यूनतम 1 लॉट की सुलभ निवेश सीमा उपलब्ध है।',
       ];
 
   const consList = ipo.cons_list
     ? ipo.cons_list.split('|').map((s) => s.trim()).filter(Boolean)
     : [
-        'बाज़ार में अस्थिरता और सेक्टर प्रतिस्पर्धा से कंपनी के मार्जिन पर असर पड़ सकता है।',
+        'कच्चे माल की लागत में उतार-चढ़ाव कंपनी के ऑपरेटिंग मार्जिन पर दबाव डाल सकता है।',
+        'उद्योग में घरेलू और अंतरराष्ट्रीय कंपनियों की बढ़ती प्रतिस्पर्धा से प्राइसिंग पावर सीमित हो सकती है।',
+        'कंपनी का व्यवसाय सरकारी नीतियों और समग्र आर्थिक चक्रों के प्रति संवेदनशील है।',
+        'कार्यशील पूंजी की अधिक आवश्यकता के कारण नकदी प्रवाह में अस्थायी उतार-चढ़ाव संभव है।',
         gmp <= 0
           ? 'अभी ग्रे मार्केट प्रीमियम (GMP) शांत है, इसलिए आखिरी दिन के QIB सब्सक्रिप्शन का इंतज़ार करें।'
           : 'लिस्टिंग के दिन मुनाफ़ावसूली (Profit Booking) के कारण शुरुआती उतार-चढ़ाव संभव है।',
@@ -54,6 +194,47 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
     { id: 'allotment', label: '6. Allotment Status' },
     { id: 'faq', label: '7. Hindi FAQs' },
   ];
+
+  const prosAndConsBlock = (
+    <section className="space-y-4 pt-2">
+      <div>
+        <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+          ⚖️ {ipo.company_name} IPO Pros &amp; Cons (सकारात्मक पक्ष और जोखिम)
+        </h3>
+        <p className="text-xs sm:text-sm text-slate-600">
+          DRHP/RHP दस्तावेज़, कंपनी के वित्तीय प्रदर्शन और ग्रे मार्केट संकेतों के आधार पर विस्तृत आकलन:
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 sm:p-5 space-y-2.5">
+          <h4 className="text-sm sm:text-base font-bold text-emerald-900 flex items-center gap-2">
+            <span>✅</span> Key Strengths (Pros / ताकत)
+          </h4>
+          <ul className="space-y-2 text-xs sm:text-sm text-emerald-950 list-disc pl-5">
+            {prosList.map((item, idx) => (
+              <li key={idx} className="leading-relaxed">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="bg-rose-50/80 border border-rose-200 rounded-xl p-4 sm:p-5 space-y-2.5">
+          <h4 className="text-sm sm:text-base font-bold text-rose-900 flex items-center gap-2">
+            <span>⚠️</span> Key Risks (Cons / जोखिम)
+          </h4>
+          <ul className="space-y-2 text-xs sm:text-sm text-rose-950 list-disc pl-5">
+            {consList.map((item, idx) => (
+              <li key={idx} className="leading-relaxed">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -76,109 +257,27 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
 
       {/* Tab Content Area */}
       <div className="p-5 sm:p-6">
-        {/* TAB 1: OVERVIEW & 700-WORD HINDI BLOG WITH IN-ARTICLE AD SLOTS */}
+        {/* TAB 1: 700-WORD HINDI BLOG + 6-7 PROS & CONS + 3-YEAR FINANCIAL CHART */}
         {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 mb-3">
-                {ipo.company_name} IPO Dates &amp; Issue Details
-              </h2>
-              <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                <table className="w-full text-sm text-left border-collapse">
-                  <tbody className="divide-y divide-slate-200">
-                    <tr className="bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-semibold text-slate-700 w-1/2">IPO Open Date</td>
-                      <td className="py-2.5 px-4 text-slate-900">{formatShortDate(ipo.open_date)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">IPO Close Date</td>
-                      <td className="py-2.5 px-4 text-slate-900">{formatShortDate(ipo.close_date)}</td>
-                    </tr>
-                    <tr className="bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">Allotment Date</td>
-                      <td className="py-2.5 px-4 text-slate-900">{formatShortDate(ipo.allotment_date)}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">Listing Date</td>
-                      <td className="py-2.5 px-4 text-slate-900">{formatShortDate(ipo.listing_date)}</td>
-                    </tr>
-                    <tr className="bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">Issue Price Band</td>
-                      <td className="py-2.5 px-4 text-slate-900">
-                        {upperPrice > 0 ? `₹${lowerPrice} - ₹${upperPrice} per share` : 'Announced Soon'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">Lot Size &amp; Min Investment</td>
-                      <td className="py-2.5 px-4 text-slate-900">
-                        {lotSize > 0
-                          ? `${lotSize} Shares (${minInvestment > 0 ? `₹${minInvestment.toLocaleString('en-IN')}` : 'TBA'})`
-                          : 'Announced Soon'}
-                      </td>
-                    </tr>
-                    <tr className="bg-slate-50/70">
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">Total Issue Size</td>
-                      <td className="py-2.5 px-4 text-slate-900">
-                        {issueSize > 0 ? `₹${issueSize.toLocaleString('en-IN')} Crore` : 'Announced Soon'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2.5 px-4 font-semibold text-slate-700">IPO Category / Documents</td>
-                      <td className="py-2.5 px-4 text-slate-900 flex flex-wrap items-center gap-2">
-                        <span>{ipo.category || 'Mainboard'}</span>
-                        <button
-                          onClick={() => setActiveTab('drhp')}
-                          className="text-xs font-semibold text-teal-700 underline hover:text-teal-900 cursor-pointer"
-                        >
-                          | DRHP / RHP PDF देखें
-                        </button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* 700-Word Deep Hindi Article with Mid-Scroll In-Article Ad Slots */}
-            <article className="bg-slate-50/70 border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4 text-sm sm:text-[15px] leading-7 text-slate-800">
+          <div className="space-y-8">
+            <article className="space-y-4 text-sm sm:text-[15px] leading-7 text-slate-800">
               <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-3">
                 <h2 className="text-base sm:text-xl font-extrabold text-slate-900">
                   {ipo.company_name} IPO की संपूर्ण जानकारी और DRHP विश्लेषण (हिंदी में)
                 </h2>
-                <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                  Detailed Hindi Analysis
-                </span>
+                <button
+                  onClick={() => setActiveTab('drhp')}
+                  className="text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200 px-3 py-1 rounded-full hover:bg-teal-100 cursor-pointer"
+                >
+                  DRHP / RHP PDF देखें
+                </button>
               </div>
 
               {aiBlogParagraphs.length > 0 ? (
                 aiBlogParagraphs.map((para, idx) => (
-                  <Fragment key={idx}>
-                    <p className="text-slate-800">{para}</p>
-
-                    {/* IN-ARTICLE AD SLOT #2 (After Paragraph 2) */}
-                    {idx === 1 && (
-                      <div
-                        id="nk24-ad-in-article-1"
-                        className="my-4 w-full min-h-[85px] bg-white border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
-                      >
-                        <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
-                          In-Article Ad / Groww-Upstox Banner Slot #2
-                        </span>
-                      </div>
-                    )}
-
-                    {/* IN-ARTICLE AD SLOT #3 (After Paragraph 4) */}
-                    {idx === 3 && (
-                      <div
-                        id="nk24-ad-in-article-2"
-                        className="my-4 w-full min-h-[85px] bg-white border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
-                      >
-                        <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
-                          In-Article Google AdSense Slot #3
-                        </span>
-                      </div>
-                    )}
-                  </Fragment>
+                  <p key={idx} className="text-slate-800">
+                    {para}
+                  </p>
                 ))
               ) : (
                 <>
@@ -190,14 +289,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                     इश्यू <strong>{formatShortDate(ipo.open_date)}</strong> को बोली लगाने के लिए खुलेगा और{' '}
                     <strong>{formatShortDate(ipo.close_date)}</strong> को बंद होगा।
                   </p>
-                  <div
-                    id="nk24-ad-in-article-1"
-                    className="my-4 w-full min-h-[85px] bg-white border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
-                  >
-                    <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
-                      In-Article Ad / Banner Slot #2
-                    </span>
-                  </div>
                   <p>
                     <strong>लॉट साइज़ और न्यूनतम निवेश:</strong> रिटेल निवेशकों को इस आईपीओ में आवेदन करने के लिए
                     कम से कम कंपनी द्वारा निर्धारित न्यूनतम 1 लॉट के लिए बोली लगानी होगी। इस पब्लिक इश्यू से जुटाई गई
@@ -207,6 +298,12 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                 </>
               )}
             </article>
+
+            {/* 6-7 Bullets Pros & Cons directly below Blog */}
+            {prosAndConsBlock}
+
+            {/* 3-Year Revenue & Profit Chart + Table below Pros & Cons */}
+            <FinancialsChartSection companyName={ipo.company_name} financials={ipo.financials_json} />
           </div>
         )}
 
@@ -240,7 +337,9 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                       const pct = upperPrice > 0 ? ((rowGmp / upperPrice) * 100).toFixed(2) : '0.00';
                       return (
                         <tr key={i} className="hover:bg-slate-50">
-                          <td className="py-2.5 px-4 font-medium">{formatShortDate(row.gmp_date || row.recorded_date)}</td>
+                          <td className="py-2.5 px-4 font-medium">
+                            {formatShortDate(row.gmp_date || row.recorded_date)}
+                          </td>
                           <td className="py-2.5 px-4">₹{upperPrice}</td>
                           <td className="py-2.5 px-4 font-bold text-emerald-700">+₹{rowGmp}</td>
                           <td className="py-2.5 px-4">
@@ -380,47 +479,11 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 5: REVIEW WITH PROS & CONS */}
+        {/* TAB 5: REVIEW WITH PROS, CONS & FINANCIALS */}
         {activeTab === 'review' && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 mb-1">
-                {ipo.company_name} IPO Review — Pros &amp; Cons (Apply या Avoid?)
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-600">
-                DRHP/RHP दस्तावेज़, कंपनी के वित्तीय प्रदर्शन और ग्रे मार्केट संकेतों के आधार पर मुख्य ताकत (Pros) और
-                जोखिम (Cons):
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-2.5">
-                <h3 className="text-sm sm:text-base font-bold text-emerald-900 flex items-center gap-2">
-                  <span>✅</span> Key Strengths (Pros / सकारात्मक पक्ष)
-                </h3>
-                <ul className="space-y-2 text-xs sm:text-sm text-emerald-950 list-disc pl-5">
-                  {prosList.map((item, idx) => (
-                    <li key={idx} className="leading-relaxed">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="bg-rose-50/80 border border-rose-200 rounded-xl p-4 space-y-2.5">
-                <h3 className="text-sm sm:text-base font-bold text-rose-900 flex items-center gap-2">
-                  <span>⚠️</span> Key Risks (Cons / ध्यान देने योग्य जोखिम)
-                </h3>
-                <ul className="space-y-2 text-xs sm:text-sm text-rose-950 list-disc pl-5">
-                  {consList.map((item, idx) => (
-                    <li key={idx} className="leading-relaxed">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
+          <div className="space-y-6">
+            {prosAndConsBlock}
+            <FinancialsChartSection companyName={ipo.company_name} financials={ipo.financials_json} />
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs sm:text-sm text-slate-700">
               <strong>निष्कर्ष:</strong> यदि आखिरी दिन QIB और NII वर्ग से मज़बूत मांग आती है और GMP में स्थिरता बनी
               रहती है, तो लिस्टिंग गेन के लिए आवेदन पर विचार किया जा सकता है। निवेश से पहले अपना जोखिम आकलन अवश्य करें।
