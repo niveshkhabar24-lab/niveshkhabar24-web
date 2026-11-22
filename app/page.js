@@ -8,6 +8,35 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
+function formatIssueDates(openDate, closeDate) {
+  if (!openDate) return '';
+
+  const start = new Date(`${openDate}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return '';
+
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const sDay = String(start.getDate()).padStart(2, '0');
+  const sMonth = months[start.getMonth()];
+
+  if (!closeDate) {
+    return `${sDay} ${sMonth}`;
+  }
+
+  const end = new Date(`${closeDate}T00:00:00`);
+  if (Number.isNaN(end.getTime())) {
+    return `${sDay} ${sMonth}`;
+  }
+
+  const eDay = String(end.getDate()).padStart(2, '0');
+  const eMonth = months[end.getMonth()];
+
+  if (sMonth === eMonth) {
+    return `${sDay} - ${eDay} ${eMonth}`;
+  }
+
+  return `${sDay} ${sMonth} - ${eDay} ${eMonth}`;
+}
+
 export default function HomePage() {
   const [ipos, setIpos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +53,7 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from('ipos')
         .select('*')
-        .order('updated_at', { ascending: false });
+        .order('open_date', { ascending: false, nullsFirst: false });
 
       if (!error && data) {
         setIpos(data);
@@ -43,6 +72,7 @@ export default function HomePage() {
 
   const mainboardIpos = searchedIpos.filter((i) => i.category !== 'SME');
   const smeIpos = searchedIpos.filter((i) => i.category === 'SME');
+  const upcomingIpos = searchedIpos.filter((i) => i.status === 'Upcoming');
 
   // Allotment Probability Calculator Logic
   const selectedIpo = ipos.find((i) => String(i.id) === String(selectedIpoId));
@@ -53,17 +83,17 @@ export default function HomePage() {
       ? 100
       : Math.min(99.9, (1 - Math.pow(1 - 1 / retailSub, dematAccounts)) * 100);
 
-  // Exact Chittorgarh 2-Column Directory Table (Only Company + Status Dot + Issue Dates)
+  // Exact Chittorgarh 2-Column Directory Table (Zebra + Open/Pre-Apply Row Tint + O/P Badges + Formatted Dates)
   const renderChittorgarhTable = (list, emptyMsg) => (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse text-sm">
         <thead>
-          <tr className="bg-slate-100/80 text-slate-600 border-b border-slate-200 text-xs">
+          <tr className="bg-slate-100 text-slate-700 border-b-2 border-slate-300 text-xs">
             <th className="py-2.5 px-4 font-bold">Company</th>
             <th className="py-2.5 px-4 font-bold text-right">Issue Dates</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-slate-200/80">
           {loading ? (
             <tr>
               <td colSpan="2" className="py-8 text-center text-slate-400 text-xs">
@@ -77,41 +107,58 @@ export default function HomePage() {
               </td>
             </tr>
           ) : (
-            list.map((ipo) => (
-              <tr key={ipo.id} className="hover:bg-slate-50 transition group">
-                <td className="py-3 px-4">
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={`/ipo/${ipo.slug}`}
-                      className="font-semibold text-blue-700 group-hover:text-emerald-700 group-hover:underline text-sm"
-                    >
-                      {ipo.company_name}
-                    </a>
-                    {/* Chittorgarh Style Small Status Dot */}
-                    <span
-                      title={ipo.status}
-                      className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${
-                        ipo.status === 'Open'
-                          ? 'bg-emerald-500 ring-2 ring-emerald-200'
-                          : ipo.status === 'Upcoming'
-                          ? 'bg-amber-400 ring-2 ring-amber-100'
-                          : 'bg-slate-400'
-                      }`}
-                    />
-                  </div>
-                  {ipo.has_shareholder_quota && (
-                    <span className="inline-block mt-0.5 text-[10px] text-purple-700 font-semibold">
-                      • Shareholder Quota ({ipo.parent_company})
-                    </span>
-                  )}
-                </td>
-                <td className="py-3 px-4 text-xs text-slate-600 text-right whitespace-nowrap font-medium">
-                  {ipo.open_date && ipo.close_date
-                    ? `${ipo.open_date} - ${ipo.close_date}`
-                    : 'Dates Soon'}
-                </td>
-              </tr>
-            ))
+            list.map((ipo, index) => {
+              const isOpen = ipo.status === 'Open';
+              const isPreApply = ipo.status === 'Upcoming' && Boolean(ipo.open_date);
+
+              let rowBgClass = index % 2 === 0 ? 'bg-white' : 'bg-slate-50/90';
+              if (isOpen) {
+                rowBgClass = 'bg-sky-100/80';
+              } else if (isPreApply) {
+                rowBgClass = 'bg-amber-50';
+              }
+
+              return (
+                <tr key={ipo.id} className={`${rowBgClass} hover:bg-blue-50/70 transition group`}>
+                  <td className="py-2.5 px-4">
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`/ipo/${ipo.slug}`}
+                        className="font-semibold text-[#1a56db] group-hover:text-teal-700 group-hover:underline text-sm"
+                      >
+                        {ipo.company_name}
+                      </a>
+
+                      {isOpen && (
+                        <span
+                          title="Open for Bidding"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-teal-600 text-white text-[10px] font-bold leading-none shrink-0"
+                        >
+                          O
+                        </span>
+                      )}
+
+                      {isPreApply && (
+                        <span
+                          title="Pre-Apply Open"
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-400 text-white text-[10px] font-bold leading-none shrink-0"
+                        >
+                          P
+                        </span>
+                      )}
+                    </div>
+                    {ipo.has_shareholder_quota && (
+                      <span className="inline-block mt-0.5 text-[10px] text-purple-700 font-semibold">
+                        - Shareholder Quota ({ipo.parent_company})
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-4 text-xs text-slate-700 text-right whitespace-nowrap font-medium">
+                    {formatIssueDates(ipo.open_date, ipo.close_date)}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
@@ -129,6 +176,9 @@ export default function HomePage() {
           <a href="#sme-list" className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition">
             SME IPOs &amp; FPOs
           </a>
+          <a href="#upcoming-list" className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 hover:bg-amber-100 transition">
+            Upcoming IPOs ({upcomingIpos.length})
+          </a>
           <a href="#allotment-guide" className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition">
             Allotment Status Check
           </a>
@@ -140,16 +190,19 @@ export default function HomePage() {
           </a>
         </div>
 
-        {/* Status Dot Legend (Just like Chittorgarh) */}
-        <div className="flex items-center gap-3 text-[11px] text-slate-500 px-2">
+        {/* Status Badge Legend (Just like Chittorgarh) */}
+        <div className="flex items-center gap-3 text-[11px] text-slate-600 px-2">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Open
+            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-teal-600 text-white text-[9px] font-bold">
+              O
+            </span>
+            Open
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Upcoming
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" /> Closed/Listed
+            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-400 text-white text-[9px] font-bold">
+              P
+            </span>
+            Pre-Apply / Upcoming
           </span>
         </div>
       </div>
@@ -215,6 +268,24 @@ export default function HomePage() {
           </div>
         </section>
       </div>
+
+      {/* UPCOMING IPOs & FPOs 2026 SECTION */}
+      <section id="upcoming-list" className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-amber-50/70">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">
+              Upcoming IPOs &amp; FPOs 2026 (Mainboard &amp; SME)
+            </h2>
+            <p className="text-[11px] text-slate-600">
+              Aane wale IPOs jinki bidding jald shuru hone wali hai (Pre-Apply Open)
+            </p>
+          </div>
+          <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded">
+            {upcomingIpos.length} Upcoming
+          </span>
+        </div>
+        {renderChittorgarhTable(upcomingIpos, 'Abhi koi Upcoming IPO scheduled nahi hai.')}
+      </section>
 
       {/* GRID SECTION: Direct Allotment Links + Allotment Probability Calculator */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
