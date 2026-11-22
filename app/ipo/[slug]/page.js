@@ -20,6 +20,18 @@ async function getIPOBySlug(slug) {
   return data;
 }
 
+async function getGmpHistory(slug) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('ipo_gmp_history')
+    .select('*')
+    .eq('ipo_slug', slug)
+    .order('gmp_date', { ascending: false });
+
+  if (error || !data) return [];
+  return data;
+}
+
 export async function generateMetadata({ params }) {
   const { slug } = await params;
   const ipo = await getIPOBySlug(slug);
@@ -43,7 +55,10 @@ export async function generateMetadata({ params }) {
 
 export default async function IPODetailPage({ params }) {
   const { slug } = await params;
-  const ipo = await getIPOBySlug(slug);
+  const [ipo, gmpHistory] = await Promise.all([
+    getIPOBySlug(slug),
+    getGmpHistory(slug),
+  ]);
 
   if (!ipo) notFound();
 
@@ -53,6 +68,7 @@ export default async function IPODetailPage({ params }) {
   const gainPercent = maxPrice > 0 ? ((gmp / maxPrice) * 100).toFixed(2) : '0.00';
   const oneLotProfit = gmp * (Number(ipo.lot_size) || 0);
   const minInvestment = maxPrice * (Number(ipo.lot_size) || 0);
+  const formattedTotalSub = Number(ipo.total_sub || 0).toFixed(2);
 
   const faqSchema = {
     '@context': 'https://schema.org',
@@ -138,14 +154,14 @@ export default async function IPODetailPage({ params }) {
 
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
             <span className="text-xs text-slate-500 font-medium block">Total Subscription</span>
-            <span className="text-xl font-extrabold text-blue-700">{ipo.total_sub || 0}x</span>
+            <span className="text-xl font-extrabold text-blue-700">{formattedTotalSub}x</span>
             <span className="text-[11px] text-slate-500 block">Min Invest: ₹{minInvestment.toLocaleString('en-IN')}</span>
           </div>
         </div>
       </header>
 
       {/* Interactive 6-Tab Hub */}
-      <IpoTabsClient ipo={ipo} />
+      <IpoTabsClient ipo={ipo} gmpHistory={gmpHistory} />
     </div>
   );
 }
