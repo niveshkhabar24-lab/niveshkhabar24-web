@@ -144,7 +144,7 @@ def is_valid_active_ipo(ipo: dict) -> bool:
     if open_str:
         try:
             o_dt = datetime.strptime(open_str, "%Y-%m-%d").date()
-            if o_dt < today_dt and (ipo.get("price_max") or 0) == 0:
+            if o_dt < today_dt and (ipo.get("issue_price_max") or 0) == 0:
                 return False
         except ValueError:
             pass
@@ -258,8 +258,8 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
     """Har IPO ke liye 650-800 shabd ka comprehensive Hindi analytical blog + short intro + Pros & Cons banata hai"""
     name = ipo["company_name"]
     cat = ipo.get("category") or "Mainboard"
-    p_min = int(ipo.get("price_min") or 0)
-    p_max = int(ipo.get("price_max") or 0)
+    p_min = int(ipo.get("issue_price_min") or 0)
+    p_max = int(ipo.get("issue_price_max") or 0)
     lot = int(ipo.get("lot_size") or 0)
     size_cr = round(float(ipo.get("issue_size_cr") or 0), 2)
     gmp = round(float(ipo.get("gmp_price") or 0), 2)
@@ -450,8 +450,8 @@ def fetch_nse_ipos() -> list:
                     "open_date": open_dt,
                     "close_date": close_dt,
                     "listing_date": list_dt,
-                    "price_min": p_min,
-                    "price_max": p_max,
+                    "issue_price_min": p_min,
+                    "issue_price_max": p_max,
                     "lot_size": lot_size,
                     "issue_size_cr": issue_size_cr,
                     "qib_sub": qib_sub,
@@ -525,8 +525,8 @@ def fetch_bse_ipos() -> list:
                     "open_date": open_dt,
                     "close_date": close_dt,
                     "listing_date": list_dt,
-                    "price_min": p_min,
-                    "price_max": p_max,
+                    "issue_price_min": p_min,
+                    "issue_price_max": p_max,
                     "lot_size": lot_size,
                     "issue_size_cr": issue_size_cr,
                     "qib_sub": 0.0,
@@ -573,8 +573,8 @@ def merge_nse_and_bse(nse_list: list, bse_list: list) -> list:
             merged_map[key] = bse_item
         else:
             ex = merged_map[key]
-            if ex["price_max"] == 0 and bse_item["price_max"] > 0:
-                ex["price_min"], ex["price_max"] = bse_item["price_min"], bse_item["price_max"]
+            if ex["issue_price_max"] == 0 and bse_item["issue_price_max"] > 0:
+                ex["issue_price_min"], ex["issue_price_max"] = bse_item["issue_price_min"], bse_item["issue_price_max"]
             if ex["lot_size"] == 0 and bse_item["lot_size"] > 0:
                 ex["lot_size"] = bse_item["lot_size"]
             if ex["issue_size_cr"] == 0 and bse_item["issue_size_cr"] > 0:
@@ -667,9 +667,9 @@ def sync_all():
                 ipo["lot_size"] = old_row["lot_size"]
             if ipo["issue_size_cr"] == 0 and old_row.get("issue_size_cr"):
                 ipo["issue_size_cr"] = old_row["issue_size_cr"]
-            if ipo["price_max"] == 0 and old_row.get("price_max"):
-                ipo["price_min"] = old_row.get("price_min") or 0
-                ipo["price_max"] = old_row.get("price_max") or 0
+            if ipo["issue_price_max"] == 0 and old_row.get("issue_price_max"):
+                ipo["issue_price_min"] = old_row.get("issue_price_min") or 0
+                ipo["issue_price_max"] = old_row.get("issue_price_max") or 0
             if not ipo["drhp_url"] and old_row.get("drhp_url"):
                 ipo["drhp_url"] = old_row["drhp_url"]
             if not ipo["rhp_url"] and old_row.get("rhp_url"):
