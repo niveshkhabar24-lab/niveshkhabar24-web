@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 
 function formatShortDate(dateStr) {
   if (!dateStr) return 'Announced Soon';
@@ -13,23 +13,20 @@ function formatShortDate(dateStr) {
 export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
   const [activeTab, setActiveTab] = useState('overview');
 
-  const lowerPrice = Number(ipo.price_min) || 0;
-  const upperPrice = Number(ipo.price_max) || 0;
+  const lowerPrice = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
+  const upperPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
   const lotSize = Number(ipo.lot_size) || 0;
   const gmp = Number(ipo.gmp_price) || 0;
   const issueSize = Number(ipo.issue_size_cr) || 0;
   const minInvestment = upperPrice > 0 && lotSize > 0 ? upperPrice * lotSize : 0;
 
-  // PDF URL (RHP ko priority, warna DRHP)
   const pdfUrl = ipo.rhp_url || ipo.drhp_url || '';
   const hasDirectPdf = Boolean(pdfUrl);
 
-  // Unique AI/PDF Blog Paragraphs
   const aiBlogParagraphs = ipo.ai_blog_hindi
     ? ipo.ai_blog_hindi.split(/\n\n+/).filter((p) => p.trim().length > 0)
     : [];
 
-  // Dynamic Pros & Cons Lists
   const prosList = ipo.pros_list
     ? ipo.pros_list.split('|').map((s) => s.trim()).filter(Boolean)
     : [
@@ -59,7 +56,7 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
   ];
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2 p-4 bg-slate-50 border-b border-slate-200">
         {tabs.map((tab) => (
@@ -79,14 +76,14 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
 
       {/* Tab Content Area */}
       <div className="p-5 sm:p-6">
-        {/* TAB 1: OVERVIEW & UNIQUE HINDI BLOG */}
+        {/* TAB 1: OVERVIEW & 700-WORD HINDI BLOG WITH IN-ARTICLE AD SLOTS */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-slate-900 mb-3">
                 {ipo.company_name} IPO Dates &amp; Issue Details
               </h2>
-              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-sm text-left border-collapse">
                   <tbody className="divide-y divide-slate-200">
                     <tr className="bg-slate-50/70">
@@ -129,14 +126,12 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                       <td className="py-2.5 px-4 font-semibold text-slate-700">IPO Category / Documents</td>
                       <td className="py-2.5 px-4 text-slate-900 flex flex-wrap items-center gap-2">
                         <span>{ipo.category || 'Mainboard'}</span>
-                        {hasDirectPdf && (
-                          <button
-                            onClick={() => setActiveTab('drhp')}
-                            className="text-xs font-semibold text-teal-700 underline hover:text-teal-900 cursor-pointer"
-                          >
-                            | DRHP / RHP PDF देखें
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setActiveTab('drhp')}
+                          className="text-xs font-semibold text-teal-700 underline hover:text-teal-900 cursor-pointer"
+                        >
+                          | DRHP / RHP PDF देखें
+                        </button>
                       </td>
                     </tr>
                   </tbody>
@@ -144,21 +139,47 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
               </div>
             </div>
 
-            {/* Unique PDF-Analyzed Hindi Article */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 text-sm leading-relaxed text-slate-800">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-slate-900">
-                  {ipo.company_name} IPO की पूरी जानकारी और DRHP विश्लेषण (हिंदी में)
+            {/* 700-Word Deep Hindi Article with Mid-Scroll In-Article Ad Slots */}
+            <article className="bg-slate-50/70 border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4 text-sm sm:text-[15px] leading-7 text-slate-800">
+              <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-3">
+                <h2 className="text-base sm:text-xl font-extrabold text-slate-900">
+                  {ipo.company_name} IPO की संपूर्ण जानकारी और DRHP विश्लेषण (हिंदी में)
                 </h2>
-                {hasDirectPdf && (
-                  <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                    Verified from Official Prospectus
-                  </span>
-                )}
+                <span className="text-[11px] font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
+                  Detailed Hindi Analysis
+                </span>
               </div>
 
               {aiBlogParagraphs.length > 0 ? (
-                aiBlogParagraphs.map((para, idx) => <p key={idx}>{para}</p>)
+                aiBlogParagraphs.map((para, idx) => (
+                  <Fragment key={idx}>
+                    <p className="text-slate-800">{para}</p>
+
+                    {/* IN-ARTICLE AD SLOT #2 (After Paragraph 2) */}
+                    {idx === 1 && (
+                      <div
+                        id="nk24-ad-in-article-1"
+                        className="my-4 w-full min-h-[85px] bg-white border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
+                      >
+                        <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
+                          In-Article Ad / Groww-Upstox Banner Slot #2
+                        </span>
+                      </div>
+                    )}
+
+                    {/* IN-ARTICLE AD SLOT #3 (After Paragraph 4) */}
+                    {idx === 3 && (
+                      <div
+                        id="nk24-ad-in-article-2"
+                        className="my-4 w-full min-h-[85px] bg-white border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
+                      >
+                        <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
+                          In-Article Google AdSense Slot #3
+                        </span>
+                      </div>
+                    )}
+                  </Fragment>
+                ))
               ) : (
                 <>
                   <p>
@@ -169,6 +190,14 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                     इश्यू <strong>{formatShortDate(ipo.open_date)}</strong> को बोली लगाने के लिए खुलेगा और{' '}
                     <strong>{formatShortDate(ipo.close_date)}</strong> को बंद होगा।
                   </p>
+                  <div
+                    id="nk24-ad-in-article-1"
+                    className="my-4 w-full min-h-[85px] bg-white border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
+                  >
+                    <span className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">
+                      In-Article Ad / Banner Slot #2
+                    </span>
+                  </div>
                   <p>
                     <strong>लॉट साइज़ और न्यूनतम निवेश:</strong> रिटेल निवेशकों को इस आईपीओ में आवेदन करने के लिए
                     कम से कम कंपनी द्वारा निर्धारित न्यूनतम 1 लॉट के लिए बोली लगानी होगी। इस पब्लिक इश्यू से जुटाई गई
@@ -177,7 +206,7 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                   </p>
                 </>
               )}
-            </div>
+            </article>
           </div>
         )}
 
@@ -211,7 +240,7 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                       const pct = upperPrice > 0 ? ((rowGmp / upperPrice) * 100).toFixed(2) : '0.00';
                       return (
                         <tr key={i} className="hover:bg-slate-50">
-                          <td className="py-2.5 px-4 font-medium">{formatShortDate(row.recorded_date)}</td>
+                          <td className="py-2.5 px-4 font-medium">{formatShortDate(row.gmp_date || row.recorded_date)}</td>
                           <td className="py-2.5 px-4">₹{upperPrice}</td>
                           <td className="py-2.5 px-4 font-bold text-emerald-700">+₹{rowGmp}</td>
                           <td className="py-2.5 px-4">
@@ -321,13 +350,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                     className="w-full h-full border-0"
                   />
                 </div>
-                <p className="text-xs text-slate-500">
-                  यदि PDF प्रीव्यू लोड होने में समय ले रहा है, तो ऊपर दिए गए{' '}
-                  <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="text-teal-700 underline font-semibold">
-                    Download Official PDF
-                  </a>{' '}
-                  बटन से सीधे अपने फ़ोन या कंप्यूटर में सेव करें।
-                </p>
               </div>
             ) : (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 space-y-3">
@@ -337,7 +359,7 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                 </p>
                 <div className="flex flex-wrap gap-3">
                   <a
-                    href={`https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10`}
+                    href="https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 bg-slate-900 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-slate-800"
@@ -372,7 +394,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* PROS CARD */}
               <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-4 space-y-2.5">
                 <h3 className="text-sm sm:text-base font-bold text-emerald-900 flex items-center gap-2">
                   <span>✅</span> Key Strengths (Pros / सकारात्मक पक्ष)
@@ -386,7 +407,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                 </ul>
               </div>
 
-              {/* CONS CARD */}
               <div className="bg-rose-50/80 border border-rose-200 rounded-xl p-4 space-y-2.5">
                 <h3 className="text-sm sm:text-base font-bold text-rose-900 flex items-center gap-2">
                   <span>⚠️</span> Key Risks (Cons / ध्यान देने योग्य जोखिम)
