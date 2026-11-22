@@ -12,7 +12,8 @@ export default function HomePage() {
   const [ipos, setIpos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [selectedIpoId, setSelectedIpoId] = useState('');
+  const [dematAccounts, setDematAccounts] = useState(1);
 
   useEffect(() => {
     async function fetchIPOs() {
@@ -23,260 +24,367 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from('ipos')
         .select('*')
-        .order('open_date', { ascending: false });
+        .order('updated_at', { ascending: false });
 
       if (!error && data) {
         setIpos(data);
+        if (data.length > 0) setSelectedIpoId(String(data[0].id));
       }
       setLoading(false);
     }
     fetchIPOs();
   }, []);
 
-  const filteredIpos = ipos.filter((ipo) => {
-    const matchesSearch =
+  const searchedIpos = ipos.filter(
+    (ipo) =>
       ipo.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ipo.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ipo.parent_company?.toLowerCase().includes(searchQuery.toLowerCase());
+      ipo.parent_company?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-    const matchesStatus =
-      statusFilter === 'All' ||
-      ipo.status?.toLowerCase() === statusFilter.toLowerCase();
+  const mainboardIpos = searchedIpos.filter((i) => i.category !== 'SME');
+  const smeIpos = searchedIpos.filter((i) => i.category === 'SME');
 
-    return matchesSearch && matchesStatus;
-  });
+  // Allotment Probability Calculator Logic
+  const selectedIpo = ipos.find((i) => String(i.id) === String(selectedIpoId));
+  const retailSub = Number(selectedIpo?.retail_sub) || 1;
+  const singleAccChance = retailSub <= 1 ? 100 : Math.min(100, (1 / retailSub) * 100);
+  const combinedChance =
+    retailSub <= 1
+      ? 100
+      : Math.min(99.9, (1 - Math.pow(1 - 1 / retailSub, dematAccounts)) * 100);
 
-  const getStatusBadge = (status) => {
-    const s = (status || '').toLowerCase();
-    if (s === 'open') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-    if (s === 'upcoming') return 'bg-amber-100 text-amber-800 border-amber-300';
-    if (s === 'closed') return 'bg-blue-100 text-blue-800 border-blue-300';
-    return 'bg-slate-100 text-slate-700 border-slate-300';
-  };
+  // Exact Chittorgarh 2-Column Directory Table (Only Company + Status Dot + Issue Dates)
+  const renderChittorgarhTable = (list, emptyMsg) => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr className="bg-slate-100/80 text-slate-600 border-b border-slate-200 text-xs">
+            <th className="py-2.5 px-4 font-bold">Company</th>
+            <th className="py-2.5 px-4 font-bold text-right">Issue Dates</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {loading ? (
+            <tr>
+              <td colSpan="2" className="py-8 text-center text-slate-400 text-xs">
+                IPOs list load ho rahi hai...
+              </td>
+            </tr>
+          ) : list.length === 0 ? (
+            <tr>
+              <td colSpan="2" className="py-6 text-center text-slate-400 text-xs">
+                {emptyMsg}
+              </td>
+            </tr>
+          ) : (
+            list.map((ipo) => (
+              <tr key={ipo.id} className="hover:bg-slate-50 transition group">
+                <td className="py-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`/ipo/${ipo.slug}`}
+                      className="font-semibold text-blue-700 group-hover:text-emerald-700 group-hover:underline text-sm"
+                    >
+                      {ipo.company_name}
+                    </a>
+                    {/* Chittorgarh Style Small Status Dot */}
+                    <span
+                      title={ipo.status}
+                      className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${
+                        ipo.status === 'Open'
+                          ? 'bg-emerald-500 ring-2 ring-emerald-200'
+                          : ipo.status === 'Upcoming'
+                          ? 'bg-amber-400 ring-2 ring-amber-100'
+                          : 'bg-slate-400'
+                      }`}
+                    />
+                  </div>
+                  {ipo.has_shareholder_quota && (
+                    <span className="inline-block mt-0.5 text-[10px] text-purple-700 font-semibold">
+                      • Shareholder Quota ({ipo.parent_company})
+                    </span>
+                  )}
+                </td>
+                <td className="py-3 px-4 text-xs text-slate-600 text-right whitespace-nowrap font-medium">
+                  {ipo.open_date && ipo.close_date
+                    ? `${ipo.open_date} - ${ipo.close_date}`
+                    : 'Dates Soon'}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-10">
-      {/* Hero Banner */}
-      <section className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 text-white rounded-2xl p-6 md:p-10 shadow-lg">
-        <div className="max-w-3xl space-y-3">
-          <span className="inline-block bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-semibold px-3 py-1 rounded-full">
-            LIVE IPO GMP TODAY IN HINDI • 2026
+    <div className="max-w-7xl mx-auto px-4 py-5 space-y-6">
+      {/* Chittorgarh Style Top Quick Navigation Strip */}
+      <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-700">
+        <div className="flex flex-wrap items-center gap-2">
+          <a href="#mainboard-list" className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-800 hover:bg-blue-100 transition">
+            Mainboard IPOs &amp; FPOs
+          </a>
+          <a href="#sme-list" className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 hover:bg-emerald-100 transition">
+            SME IPOs &amp; FPOs
+          </a>
+          <a href="#allotment-guide" className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition">
+            Allotment Status Check
+          </a>
+          <a href="#allotment-calculator" className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition">
+            Allotment Chance Calculator
+          </a>
+          <a href="#sip-calculator" className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition">
+            SIP Calculator
+          </a>
+        </div>
+
+        {/* Status Dot Legend (Just like Chittorgarh) */}
+        <div className="flex items-center gap-3 text-[11px] text-slate-500 px-2">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Open
           </span>
-          <h1 className="text-2xl md:text-4xl font-extrabold leading-tight">
-            Aaj Ka IPO GMP, Live Subscription Aur Allotment Status (Hindi Mein)
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Upcoming
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" /> Closed/Listed
+          </span>
+        </div>
+      </div>
+
+      {/* Compact Title & Search Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div>
+          <h1 className="text-lg md:text-xl font-extrabold text-slate-900">
+            IPOs, Live GMP, Subscription &amp; Allotment Status 2026 (Hindi Mein)
           </h1>
-          <p className="text-slate-300 text-sm md:text-base leading-relaxed">
-            Mainboard aur SME IPO ka latest Grey Market Premium (GMP), QIB/Retail subscription
-            status, aur shareholder quota ki poori jankari bilkul saral bhasha mein.
+          <p className="text-xs text-slate-500">
+            Live GMP, QIB/Retail Subscription aur Review dekhne ke liye kisi bhi company ke naam par click karein
           </p>
         </div>
-      </section>
+        <input
+          type="text"
+          placeholder="Company naam search karein..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full md:w-72 px-3.5 py-2 rounded-lg border border-slate-300 text-xs font-medium focus:outline-none focus:border-emerald-600"
+        />
+      </div>
 
-      {/* Main IPO Table Section */}
-      <section id="live-ipo-table" className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 md:p-6 space-y-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* EXACT CHITTORGARH 2-COLUMN DIRECTORY GRID */}
+      <div id="live-ipo-table" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Column: Mainboard IPOs & FPOs 2026 */}
+        <section id="mainboard-list" className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between">
           <div>
-            <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-              Live IPO GMP List 2026 (Updated Today)
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <h2 className="text-base font-extrabold text-slate-900">
+                Mainboard IPOs &amp; FPOs 2026
+              </h2>
+              <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                {mainboardIpos.length} Listed/Active
+              </span>
+            </div>
+            {renderChittorgarhTable(mainboardIpos, 'Abhi koi Mainboard IPO available nahi hai.')}
+          </div>
+          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-right">
+            <span className="text-[11px] text-slate-500">
+              Company par click karke Live GMP &amp; Subscription dekhein →
+            </span>
+          </div>
+        </section>
+
+        {/* Right Column: SME IPOs & FPOs 2026 */}
+        <section id="sme-list" className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <h2 className="text-base font-extrabold text-slate-900">
+                SME IPOs &amp; FPOs 2026
+              </h2>
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                {smeIpos.length} Listed/Active
+              </span>
+            </div>
+            {renderChittorgarhTable(smeIpos, 'Abhi koi SME IPO available nahi hai.')}
+          </div>
+          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-right">
+            <span className="text-[11px] text-slate-500">
+              Company par click karke Live GMP &amp; Subscription dekhein →
+            </span>
+          </div>
+        </section>
+      </div>
+
+      {/* GRID SECTION: Direct Allotment Links + Allotment Probability Calculator */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section id="allotment-guide" className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">
+              Direct IPO Allotment Status Check Links
             </h2>
-            <p className="text-xs md:text-sm text-slate-500">
-              Kisi bhi IPO ka estimated listing gain aur subscription status turant dekhein
+            <p className="text-xs text-slate-500">
+              Official registrar par click karke PAN card se turant allotment status check karein
             </p>
           </div>
-
-          {/* Search Bar */}
-          <div className="w-full md:w-72">
-            <input
-              type="text"
-              placeholder="IPO ya Parent Company search karein..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
-        </div>
-
-        {/* Filter Tabs */}
-        <div className="flex flex-wrap gap-2">
-          {['All', 'Open', 'Upcoming', 'Closed', 'Listed'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setStatusFilter(tab)}
-              className={`px-4 py-1.5 rounded-full text-xs font-semibold transition ${
-                statusFilter === tab
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <a
+              href="https://ris.kfintech.com/ipostatus/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 transition flex justify-between items-center"
             >
-              {tab === 'All' ? 'Sabhi IPOs' : tab}
-            </button>
-          ))}
-        </div>
+              <div>
+                <span className="font-bold text-slate-900 block text-xs">KFintech IPO Status</span>
+                <span className="text-[10px] text-slate-500">Official Registrar</span>
+              </div>
+              <span className="text-emerald-600 font-bold text-xs">Check →</span>
+            </a>
+            <a
+              href="https://in.mpms.mufg.com/Initial_Offer/public-issues.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 transition flex justify-between items-center"
+            >
+              <div>
+                <span className="font-bold text-slate-900 block text-xs">Link Intime (MUFG)</span>
+                <span className="text-[10px] text-slate-500">Official Registrar</span>
+              </div>
+              <span className="text-emerald-600 font-bold text-xs">Check →</span>
+            </a>
+            <a
+              href="https://ipo.bigshareonline.com/IPO_Status.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 transition flex justify-between items-center"
+            >
+              <div>
+                <span className="font-bold text-slate-900 block text-xs">Bigshare Services</span>
+                <span className="text-[10px] text-slate-500">SME &amp; Mainboard</span>
+              </div>
+              <span className="text-emerald-600 font-bold text-xs">Check →</span>
+            </a>
+            <a
+              href="https://www.bseindia.com/investors/appli_check.aspx"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 transition flex justify-between items-center"
+            >
+              <div>
+                <span className="font-bold text-slate-900 block text-xs">BSE India IPO Status</span>
+                <span className="text-[10px] text-slate-500">Exchange Portal</span>
+              </div>
+              <span className="text-emerald-600 font-bold text-xs">Check →</span>
+            </a>
+          </div>
+        </section>
 
-        {/* Responsive Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 text-xs uppercase tracking-wider border-b border-slate-200">
-                <th className="py-3.5 px-4 font-bold">IPO Name</th>
-                <th className="py-3.5 px-4 font-bold">Status</th>
-                <th className="py-3.5 px-4 font-bold">Price Band</th>
-                <th className="py-3.5 px-4 font-bold">Live GMP</th>
-                <th className="py-3.5 px-4 font-bold">Est. Listing</th>
-                <th className="py-3.5 px-4 font-bold">Subscription</th>
-                <th className="py-3.5 px-4 font-bold">Dates (Open - Close)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 text-sm">
-              {loading ? (
-                <tr>
-                  <td colSpan="7" className="py-8 text-center text-slate-500">
-                    Live IPO data load ho raha hai...
-                  </td>
-                </tr>
-              ) : filteredIpos.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="py-8 text-center text-slate-500">
-                    Koi IPO nahi mila. Filter ya search badal kar dekhein.
-                  </td>
-                </tr>
-              ) : (
-                filteredIpos.map((ipo) => {
-                  const maxPrice = Number(ipo.issue_price_max) || 0;
-                  const gmp = Number(ipo.gmp_price) || 0;
-                  const estPrice = maxPrice + gmp;
-                  const gainPercent = maxPrice > 0 ? ((gmp / maxPrice) * 100).toFixed(1) : '0.0';
+        <section id="allotment-calculator" className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">
+              IPO Allotment Chance Calculator (Hindi)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Alag-alag family Demat accounts se apply karne par allotment chance calculate karein
+            </p>
+          </div>
 
-                  return (
-                    <tr key={ipo.id} className="hover:bg-slate-50 transition">
-                      <td className="py-4 px-4">
-                        <a
-                          href={`/ipo/${ipo.slug}`}
-                          className="font-bold text-slate-900 hover:text-emerald-600 block"
-                        >
-                          {ipo.company_name}
-                        </a>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                          <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">
-                            {ipo.category || 'Mainboard'}
-                          </span>
-                          {ipo.has_shareholder_quota && (
-                            <span className="text-[11px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-semibold">
-                              Shareholder Quota ({ipo.parent_company})
-                            </span>
-                          )}
-                        </div>
-                      </td>
+          <div className="space-y-3 text-sm">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">IPO Chunein:</label>
+              <select
+                value={selectedIpoId}
+                onChange={(e) => setSelectedIpoId(e.target.value)}
+                className="w-full p-2 rounded-lg border border-slate-300 bg-slate-50 font-semibold text-slate-900 text-xs"
+              >
+                {ipos.map((ipo) => (
+                  <option key={ipo.id} value={ipo.id}>
+                    {ipo.company_name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-                      <td className="py-4 px-4">
-                        <span
-                          className={`inline-block px-2.5 py-1 text-xs font-semibold rounded-full border ${getStatusBadge(
-                            ipo.status
-                          )}`}
-                        >
-                          {ipo.status}
-                        </span>
-                      </td>
+            <div>
+              <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                <span>Family Demat Accounts (Alag PAN):</span>
+                <span className="text-emerald-700">{dematAccounts} Accounts</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={dematAccounts}
+                onChange={(e) => setDematAccounts(Number(e.target.value))}
+                className="w-full accent-emerald-600"
+              />
+            </div>
 
-                      <td className="py-4 px-4 font-medium text-slate-800">
-                        ₹{ipo.issue_price_min} - ₹{ipo.issue_price_max}
-                        <span className="block text-xs text-slate-500">
-                          Lot: {ipo.lot_size} Shares
-                        </span>
-                      </td>
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="text-[10px] text-slate-500 block">1 Account Se Chance</span>
+                <span className="text-base font-extrabold text-slate-900">
+                  {singleAccChance.toFixed(1)}%
+                </span>
+              </div>
+              <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
+                <span className="text-[10px] text-emerald-700 font-semibold block">
+                  {dematAccounts} Accounts Se Total Chance
+                </span>
+                <span className="text-base font-extrabold text-emerald-700">
+                  {combinedChance.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
 
-                      <td className="py-4 px-4">
-                        <span
-                          className={`font-bold text-base ${
-                            gmp > 0 ? 'text-emerald-600' : 'text-slate-600'
-                          }`}
-                        >
-                          {gmp > 0 ? `+₹${gmp}` : `₹${gmp}`}
-                        </span>
-                        <span className="block text-xs text-slate-500">
-                          1 Lot Profit: ₹{(gmp * (ipo.lot_size || 0)).toLocaleString('en-IN')}
-                        </span>
-                      </td>
-
-                      <td className="py-4 px-4">
-                        <span className="font-bold text-slate-900">₹{estPrice}</span>
-                        <span
-                          className={`block text-xs font-semibold ${
-                            Number(gainPercent) > 0 ? 'text-emerald-600' : 'text-slate-500'
-                          }`}
-                        >
-                          ({Number(gainPercent) > 0 ? `+${gainPercent}%` : `${gainPercent}%`})
-                        </span>
-                      </td>
-
-                      <td className="py-4 px-4">
-                        <span className="font-bold text-slate-900">{ipo.total_sub || 0}x</span>
-                        <span className="block text-[11px] text-slate-500">
-                          QIB: {ipo.qib_sub || 0}x | Ret: {ipo.retail_sub || 0}x
-                        </span>
-                      </td>
-
-                      <td className="py-4 px-4 text-xs text-slate-700">
-                        <div>
-                          <span className="font-semibold">Open:</span> {ipo.open_date || '-'}
-                        </div>
-                        <div>
-                          <span className="font-semibold">Close:</span> {ipo.close_date || '-'}
-                        </div>
-                        <div className="text-slate-500">
-                          Allot: {ipo.allotment_date || '-'}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Allotment Tips Section (SEO Content in Hindi) */}
-      <section id="allotment-guide" className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
-        <h2 className="text-xl font-bold text-slate-900">
-          IPO Allotment Kaise Badhayein? (Retail Investors Ke Liye 4 Zaroori Tips)
+      {/* Latest IPO News & Guides */}
+      <section className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <h2 className="text-base font-extrabold text-slate-900">
+          Latest IPO News &amp; Investor Guides (Hindi/Hinglish)
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-slate-700">
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <h3 className="font-bold text-slate-900 mb-1">1. Alag-Alag Family PAN Card Se Apply Karein</h3>
-            <p>
-              Oversubscribed IPO mein ek hi PAN se 5 lot lagane ke bajay parivar ke 4-5 alag Demat
-              accounts se 1-1 lot lagane par allotment milne ka chance kai guna badh jata hai.
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+            <span className="text-[10px] font-bold uppercase bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
+              Shareholder Quota
+            </span>
+            <h3 className="font-bold text-slate-900 text-xs md:text-sm">
+              Parent Company Ka 1 Share Rakhkar Double Allotment Chance Paayein
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Jin IPOs mein Shareholder Quota hota hai, unmein RHP filing se pehle parent company ka 1 share rakhne par Retail + Shareholder dono mein apply kar sakte hain.
             </p>
           </div>
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <h3 className="font-bold text-slate-900 mb-1">2. Hamesha Cut-Off Price Chunein</h3>
-            <p>
-              Retail category mein apply karte samay hamesha Cut-Off Price tick karein, taaki
-              upper price band par aapka application valid rahe.
+
+          <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+            <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
+              GMP Guide
+            </span>
+            <h3 className="font-bold text-slate-900 text-xs md:text-sm">
+              Grey Market Premium (GMP) Kab Aur Kaise Dekhein?
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              IPO band hone ke aakhiri din (Day 3) dopahar 2 baje ke baad QIB subscription aur Live GMP ko milakar dekhna sabse sateek maana jaata hai.
             </p>
           </div>
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <h3 className="font-bold text-slate-900 mb-1">3. Shareholder Quota Ka Fayda Uthayein</h3>
-            <p>
-              Jis IPO mein Parent Company ka Shareholder Quota hota hai, usmein RHP filing se
-              pehle parent company ka 1 share rakhne par alag category mein apply kar sakte hain.
-            </p>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <h3 className="font-bold text-slate-900 mb-1">4. Aakhiri Din 3 Baje Se Pehle UPI Approve Karein</h3>
-            <p>
-              Closing day par dopahar 3 baje se pehle apna application aur UPI mandate zaroor
-              approve kar lein taaki last-minute bank server delay se bacha ja sake.
+
+          <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+            <span className="text-[10px] font-bold uppercase bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+              UPI Mandate Rule
+            </span>
+            <h3 className="font-bold text-slate-900 text-xs md:text-sm">
+              Closing Day Sham 5 Baje Se Pehle UPI Mandate Approve Karein
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Bank server delay se bachne ke liye aakhiri din dopahar 3 baje tak apna UPI mandate approve kar lein, warna application reject ho sakti hai.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Existing SIP Calculator */}
-      <section id="sip-calculator" className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <SipCalculator />
-      </section>
+      <SipCalculator />
     </div>
   );
 }

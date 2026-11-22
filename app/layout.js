@@ -35,6 +35,7 @@ export default function RootLayout({ children }) {
     <html lang="hi">
       <head>
         <meta name="robots" content="max-image-preview:large" />
+<script src="https://cdn.tailwindcss.com"></script>
       </head>
       <body className="bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col">
         {/* Top Navbar */}
