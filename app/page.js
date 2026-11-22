@@ -1,298 +1,251 @@
-'use client';
-
-import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import SipCalculator from './SipCalculator';
+import { notFound } from 'next/navigation';
+import IpoTabsClient from './IpoTabsClient';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-function formatIssueDates(openDate, closeDate) {
-  if (!openDate) return 'Announced Soon';
+export const revalidate = 60;
 
-  const start = new Date(`${openDate}T00:00:00`);
-  if (Number.isNaN(start.getTime())) return 'Announced Soon';
-
+function formatBoxDate(dateStr) {
+  if (!dateStr) return 'Announced Soon';
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return 'Announced Soon';
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const sDay = String(start.getDate()).padStart(2, '0');
-  const sMonth = months[start.getMonth()];
-
-  if (!closeDate) {
-    return `${sDay} ${sMonth}`;
-  }
-
-  const end = new Date(`${closeDate}T00:00:00`);
-  if (Number.isNaN(end.getTime())) {
-    return `${sDay} ${sMonth}`;
-  }
-
-  const eDay = String(end.getDate()).padStart(2, '0');
-  const eMonth = months[end.getMonth()];
-
-  if (sMonth === eMonth) {
-    return `${sDay} - ${eDay} ${eMonth}`;
-  }
-
-  return `${sDay} ${sMonth} - ${eDay} ${eMonth}`;
+  return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-export default function HomePage() {
-  const [ipos, setIpos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedIpoId, setSelectedIpoId] = useState('');
-  const [dematAccounts, setDematAccounts] = useState(1);
+async function getIPOBySlug(slug) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('ipos')
+    .select('*')
+    .eq('slug', slug)
+    .single();
 
-  useEffect(() => {
-    async function fetchIPOs() {
-      if (!supabase) {
-        setLoading(false);
-        return;
-      }
-      const { data, error } = await supabase
-        .from('ipos')
-        .select('*')
-        .order('open_date', { ascending: false, nullsFirst: false });
+  if (error || !data) return null;
+  return data;
+}
 
-      if (!error && data) {
-        setIpos(data);
-        if (data.length > 0) setSelectedIpoId(String(data[0].id));
-      }
-      setLoading(false);
-    }
-    fetchIPOs();
-  }, []);
+async function getGmpHistory(slug) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('ipo_gmp_history')
+    .select('*')
+    .eq('ipo_slug', slug)
+    .order('gmp_date', { ascending: false });
 
-  const searchedIpos = ipos.filter(
-    (ipo) =>
-      ipo.company_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ipo.parent_company?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  if (error || !data) return [];
+  return data;
+}
 
-  const mainboardIpos = searchedIpos.filter((i) => i.category !== 'SME');
-  const smeIpos = searchedIpos.filter((i) => i.category === 'SME');
-  const upcomingIpos = searchedIpos.filter((i) => i.status === 'Upcoming');
+export async function generateMetadata({ params }) {
+  const { slug } = await params;
+  const ipo = await getIPOBySlug(slug);
+  if (!ipo) return { title: 'IPO Not Found | NiveshKhabar24' };
 
-  const selectedIpo = ipos.find((i) => String(i.id) === String(selectedIpoId));
-  const retailSub = Number(selectedIpo?.retail_sub) || 1;
-  const singleAccChance = retailSub <= 1 ? 100 : Math.min(100, (1 / retailSub) * 100);
-  const combinedChance =
-    retailSub <= 1
-      ? 100
-      : Math.min(99.9, (1 - Math.pow(1 - 1 / retailSub, dematAccounts)) * 100);
+  const minP = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
+  const maxP = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
 
-  const renderChittorgarhTable = (list, emptyMsg) => (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left border-collapse text-sm">
-        <thead>
-          <tr className="bg-slate-100 text-slate-700 border-b-2 border-slate-300 text-xs">
-            <th className="py-2.5 px-4 font-bold">Company</th>
-            <th className="py-2.5 px-4 font-bold text-right">Issue Dates</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-200/80">
-          {loading ? (
-            <tr>
-              <td colSpan="2" className="py-8 text-center text-slate-400 text-xs">
-                IPOs list load ho rahi hai...
-              </td>
-            </tr>
-          ) : list.length === 0 ? (
-            <tr>
-              <td colSpan="2" className="py-6 text-center text-slate-400 text-xs">
-                {emptyMsg}
-              </td>
-            </tr>
-          ) : (
-            list.map((ipo, index) => {
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
+  const title =
+    ipo.seo_title ||
+    `${ipo.company_name} IPO GMP Today in Hindi | ${ipo.company_name} GMP in Hindi & Allotment Status`;
+  const description =
+    ipo.meta_description ||
+    `${ipo.company_name} GMP in Hindi: Aaj ka ${ipo.company_name} IPO GMP ₹${ipo.gmp_price} hai. Jaanein issue price ₹${minP}-₹${maxP}, lot size, live subscription aur allotment date saral Hindi mein.`;
 
-              const openDt = ipo.open_date ? new Date(`${ipo.open_date}T00:00:00`) : null;
-              const closeDt = ipo.close_date ? new Date(`${ipo.close_date}T00:00:00`) : null;
-              const listDt = ipo.listing_date ? new Date(`${ipo.listing_date}T00:00:00`) : null;
+  return {
+    title,
+    description,
+    keywords:
+      ipo.focus_keywords ||
+      `${ipo.company_name} gmp in hindi, ${ipo.company_name} ipo gmp in hindi, ${ipo.company_name} ipo gmp today, ${ipo.company_name} allotment status in hindi`,
+  };
+}
 
-              const isListingToday = Boolean(listDt && today.getTime() === listDt.getTime());
+export default async function IPODetailPage({ params }) {
+  const { slug } = await params;
+  const [ipo, gmpHistory] = await Promise.all([
+    getIPOBySlug(slug),
+    getGmpHistory(slug),
+  ]);
 
-              const isOpen =
-                !isListingToday &&
-                (ipo.status === 'Open' ||
-                  (openDt && closeDt && today >= openDt && today <= closeDt));
+  if (!ipo) notFound();
 
-              const daysSinceClose = closeDt
-                ? Math.floor((today - closeDt) / (1000 * 60 * 60 * 24))
-                : -1;
+  const minPrice = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
+  const maxPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
+  const lotSize = Number(ipo.lot_size) || 0;
+  const gmp = Number(ipo.gmp_price) || 0;
+  const issueSize = Number(ipo.issue_size_cr) || 0;
+  const estListing = maxPrice + gmp;
+  const gainPercent = maxPrice > 0 ? ((gmp / maxPrice) * 100).toFixed(2) : '0.00';
+  const oneLotProfit = gmp * lotSize;
+  const minInvestment = maxPrice * lotSize;
+  const formattedTotalSub = Number(ipo.total_sub || 0).toFixed(2);
 
-              const isPendingListing =
-                !isListingToday &&
-                !isOpen &&
-                closeDt &&
-                today > closeDt &&
-                (listDt ? today < listDt : daysSinceClose <= 7);
+  const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    ipo.company_name || 'IPO'
+  )}&background=0f766e&color=fff&size=200&bold=true`;
+  const displayLogo = ipo.logo_url || fallbackAvatar;
 
-              let rowBgClass = index % 2 === 0 ? 'bg-white' : 'bg-slate-50/90';
-              if (isListingToday || isOpen) {
-                rowBgClass = 'bg-emerald-100/75';
-              } else if (isPendingListing) {
-                rowBgClass = 'bg-amber-50/90';
-              }
+  const shortIntro =
+    ipo.company_about ||
+    `${ipo.company_name} भारतीय शेयर बाजार के ${ipo.category || 'Mainboard'} सेगमेंट में ₹${minPrice}-₹${maxPrice} प्रति शेयर के प्राइस बैंड पर अपना पब्लिक इश्यू लेकर आई है। यह इश्यू ${formatBoxDate(
+      ipo.open_date
+    )} से ${formatBoxDate(ipo.close_date)} तक निवेश के लिए खुला रहेगा।`;
 
-              return (
-                <tr
-                  key={ipo.id}
-                  className={`${rowBgClass} hover:bg-[#e2f3ea] transition-colors duration-150 cursor-pointer group`}
-                >
-                  <td className="py-2.5 px-4">
-                    <div className="flex items-center gap-1.5">
-                      <a
-                        href={`/ipo/${ipo.slug}`}
-                        className="font-semibold text-[#1a56db] group-hover:text-teal-800 group-hover:underline text-sm"
-                      >
-                        {ipo.company_name}
-                      </a>
-
-                      {isListingToday && (
-                        <span
-                          title="Listing Today"
-                          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white text-[10px] font-bold leading-none shrink-0"
-                        >
-                          L
-                        </span>
-                      )}
-
-                      {isOpen && (
-                        <span
-                          title="Open for Bidding"
-                          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-teal-600 text-white text-[10px] font-bold leading-none shrink-0"
-                        >
-                          O
-                        </span>
-                      )}
-
-                      {isPendingListing && (
-                        <span
-                          title="Allotment / Listing Pending"
-                          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-400 text-slate-900 text-[10px] font-bold leading-none shrink-0"
-                        >
-                          P
-                        </span>
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="py-2.5 px-4 text-right text-xs font-medium text-slate-700 whitespace-nowrap">
-                    {formatIssueDates(ipo.open_date, ipo.close_date)}
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
+  const faqSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: `${ipo.company_name} GMP in Hindi — Aaj ka live GMP kitna hai?`,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: `Aaj ${ipo.company_name} IPO ka live GMP ₹${gmp} prati share chal raha hai, jo issue price ₹${maxPrice} par lagbhag ${gainPercent}% ka listing gain dikha raha hai.`,
+        },
+      },
+      {
+        '@type': 'Question',
+        name: `${ipo.company_name} IPO ki estimated listing price kya ho sakti hai?`,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: `Issue price ₹${maxPrice} aur aaj ke GMP ₹${gmp} ke hisaab se ${ipo.company_name} IPO ki estimated listing price ₹${estListing} ke aas-paas rehne ka anuman hai.`,
+        },
+      },
+    ],
+  };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-      {/* Search & Status Legend */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <input
-          type="text"
-          placeholder="Search IPO by company name..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full sm:w-80 px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600"
-        />
-        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-          <span className="inline-flex items-center gap-1">
-            <span className="w-4 h-4 rounded-full bg-teal-600 text-white text-[10px] font-bold inline-flex items-center justify-center">O</span>
-            Open Now
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="w-4 h-4 rounded-full bg-amber-400 text-slate-900 text-[10px] font-bold inline-flex items-center justify-center">P</span>
-            Allotment Pending
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="w-4 h-4 rounded-full bg-green-600 text-white text-[10px] font-bold inline-flex items-center justify-center">L</span>
-            Listing Today
-          </span>
-        </div>
-      </div>
+    <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+      />
 
-      {/* Mainboard & SME IPO Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-emerald-800 text-white px-4 py-3 font-bold text-sm sm:text-base">
-            Current & Recent Mainboard IPOs (Live GMP)
-          </div>
-          {renderChittorgarhTable(mainboardIpos, 'Abhi koi Mainboard IPO list nahi hai.')}
-        </div>
+      {/* Breadcrumb */}
+      <nav className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+        <a href="/" className="hover:text-teal-700 font-bold">
+          ← Sabhi IPOs (Home)
+        </a>
+        <span>/</span>
+        <span>{ipo.category || 'Mainboard'} IPO</span>
+        <span>/</span>
+        <span className="text-slate-800 font-semibold">{ipo.company_name}</span>
+      </nav>
 
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-slate-800 text-white px-4 py-3 font-bold text-sm sm:text-base">
-            Current & Recent SME IPOs (Live GMP)
-          </div>
-          {renderChittorgarhTable(smeIpos, 'Abhi koi SME IPO list nahi hai.')}
-        </div>
-      </div>
-
-      {/* Upcoming IPOs */}
-      {upcomingIpos.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-indigo-800 text-white px-4 py-3 font-bold text-sm sm:text-base">
-            Upcoming IPOs Watchlist 2026
-          </div>
-          {renderChittorgarhTable(upcomingIpos, 'Koi upcoming IPO nahi mila.')}
-        </div>
-      )}
-
-      {/* Allotment Probability Calculator */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-        <h2 className="text-lg font-bold text-slate-900">
-          IPO Allotment Probability Calculator (Retail Category)
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Select IPO</label>
-            <select
-              value={selectedIpoId}
-              onChange={(e) => setSelectedIpoId(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
-            >
-              {ipos.map((ipo) => (
-                <option key={ipo.id} value={ipo.id}>
-                  {ipo.company_name} ({Number(ipo.retail_sub || 1).toFixed(2)}x)
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Number of Demat Accounts (PANs)
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={dematAccounts}
-              onChange={(e) => setDematAccounts(Math.max(1, Number(e.target.value) || 1))}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+      {/* Main Header Card */}
+      <header className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-5">
+          <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl border border-slate-200 bg-white p-2 flex items-center justify-center shrink-0 shadow-xs overflow-hidden">
+            <img
+              src={displayLogo}
+              alt={`${ipo.company_name} Logo`}
+              className="w-full h-full object-contain"
             />
           </div>
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
-            <div className="text-slate-700">
-              1 Account Chance: <strong>{singleAccChance.toFixed(1)}%</strong>
+
+          <div className="flex-1 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-3 py-0.5 rounded-full">
+                {ipo.status || 'Open'}
+              </span>
+              <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-0.5 rounded-full">
+                {ipo.category || 'Mainboard'} IPO
+              </span>
+              {issueSize > 0 && (
+                <span className="bg-teal-50 text-teal-800 border border-teal-200 text-xs font-semibold px-3 py-0.5 rounded-full">
+                  Issue Size: ₹{issueSize.toLocaleString('en-IN')} Cr
+                </span>
+              )}
+              {ipo.has_shareholder_quota && (
+                <span className="bg-purple-100 text-purple-800 text-xs font-bold px-3 py-0.5 rounded-full">
+                  Shareholder Quota ({ipo.parent_company})
+                </span>
+              )}
             </div>
-            <div className="text-emerald-800 font-bold">
-              {dematAccounts} Account(s) Chance: {combinedChance.toFixed(1)}%
-            </div>
+
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 leading-snug">
+              {ipo.seo_title ||
+                `${ipo.company_name} IPO GMP Today in Hindi | ${ipo.company_name} GMP & Allotment`}
+            </h1>
+
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">{shortIntro}</p>
           </div>
         </div>
-      </div>
 
-      {/* SIP Calculator */}
-      <SipCalculator />
+        {/* Unified 2x4 Grid (All 8 Boxes Left-Aligned in Exact Same Vertical Columns) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+          {/* Row 1: Four Dates */}
+          <div className="bg-teal-50/70 border border-teal-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs font-semibold text-teal-800 block">IPO Open Date</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5 block">
+              {formatBoxDate(ipo.open_date)}
+            </span>
+          </div>
+
+          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs font-semibold text-amber-800 block">IPO Close Date</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5 block">
+              {formatBoxDate(ipo.close_date)}
+            </span>
+          </div>
+
+          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs font-semibold text-blue-800 block">Allotment Date</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5 block">
+              {formatBoxDate(ipo.allotment_date)}
+            </span>
+          </div>
+
+          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs font-semibold text-emerald-800 block">Listing Date</span>
+            <span className="text-base sm:text-lg font-extrabold text-slate-900 mt-0.5 block">
+              {formatBoxDate(ipo.listing_date)}
+            </span>
+          </div>
+
+          {/* Row 2: Four Live Metrics */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs text-emerald-700 font-medium block">Aaj Ka Live GMP</span>
+            <span className="text-xl font-extrabold text-emerald-700">
+              {gmp > 0 ? `+₹${gmp}` : `₹${gmp}`}
+            </span>
+            <span className="text-[11px] text-emerald-600 block">({gainPercent}% Gain)</span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs text-slate-500 font-medium block">Est. Listing Price</span>
+            <span className="text-xl font-extrabold text-slate-900">₹{estListing}</span>
+            <span className="text-[11px] text-slate-500 block">
+              1 Lot Profit: {lotSize > 0 ? `₹${oneLotProfit.toLocaleString('en-IN')}` : 'TBA'}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs text-slate-500 font-medium block">Issue Price Band</span>
+            <span className="text-lg font-extrabold text-slate-900">
+              {maxPrice > 0 ? `₹${minPrice} - ₹${maxPrice}` : 'Announced Soon'}
+            </span>
+            <span className="text-[11px] text-slate-500 block">
+              Lot Size: {lotSize > 0 ? `${lotSize} Shares` : 'TBA'}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-left">
+            <span className="text-xs text-slate-500 font-medium block">Total Subscription</span>
+            <span className="text-xl font-extrabold text-blue-700">{formattedTotalSub}x</span>
+            <span className="text-[11px] text-slate-500 block">
+              Min Invest: {minInvestment > 0 ? `₹${minInvestment.toLocaleString('en-IN')}` : 'TBA'}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Interactive 7-Tab Hub & 700-Word Clean Hindi Blog */}
+      <IpoTabsClient ipo={ipo} gmpHistory={gmpHistory} />
     </div>
   );
 }
