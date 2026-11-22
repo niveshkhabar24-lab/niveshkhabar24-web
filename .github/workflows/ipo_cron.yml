@@ -1,0 +1,29 @@
+name: Auto Update Live IPO GMP
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Har 1 ghante mein chalega
+  workflow_dispatch:      # Manual test button bhi milega
+
+jobs:
+  update-ipo-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests supabase
+
+      - name: Run IPO GMP Sync Script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python scripts/update_ipo.py
