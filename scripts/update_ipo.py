@@ -1,8 +1,10 @@
 import os
 import re
+import time
 import requests
-from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from urllib.parse import quote_plus
 from supabase import create_client, Client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -13,10 +15,11 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-HEADERS = {
+NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9"
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/market-data/all-upcoming-issues-ipo"
 }
 
 def make_slug(name: str) -> str:
@@ -26,14 +29,7 @@ def make_slug(name: str) -> str:
         clean = f"{clean}-ipo-gmp"
     return clean
 
-def parse_number(val, default=0.0):
-    if val is None:
-        return default
-    s = str(val).replace(',', '').replace('₹', '').replace('%', '').strip()
-    match = re.search(r'-?\d+(\.\d+)?', s)
-    return float(match.group()) if match else default
-
-def parse_price_range(price_str):
+def parse_price_band(price_str):
     if not price_str:
         return 0, 0
     nums = re.findall(r'\d+(?:\.\d+)?', str(price_str).replace(',', ''))
@@ -44,122 +40,130 @@ def parse_price_range(price_str):
         return v, v
     return 0, 0
 
-def parse_date(date_str):
+def parse_nse_date(date_str):
     if not date_str or str(date_str).strip() in ["-", "TBA", "N/A", ""]:
         return None
-    clean_str = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', str(date_str).strip())
-    # Agar year missing ho to current year jodein
-    if re.match(r'^\d{1,2}\s+[A-Za-z]{3}$', clean_str):
-        clean_str = f"{clean_str} {datetime.now().year}"
-    for fmt in ("%d %b %Y", "%d-%b-%Y", "%Y-%m-%d", "%d %B %Y", "%d/%m/%Y"):
+    for fmt in ("%d-%b-%Y", "%d %b %Y", "%Y-%m-%d", "%d/%m/%Y"):
         try:
-            return datetime.strptime(clean_str, fmt).strftime("%Y-%m-%d")
+            return datetime.strptime(str(date_str).strip(), fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
     return None
 
-def detect_status(open_dt, close_dt, raw_status=""):
-    s = str(raw_status).lower()
-    if "open" in s or "live" in s:
-        return "Open"
-    if "upcoming" in s:
-        return "Upcoming"
-    today = datetime.now().strftime("%Y-%m-%d")
-    if open_dt and close_dt:
-        if open_dt <= today <= close_dt:
-            return "Open"
-        elif today < open_dt:
-            return "Upcoming"
-        else:
-            return "Closed"
-    return "Upcoming"
+def fetch_gmp_from_google_rss(company_name: str) -> float:
+    """Google News public RSS se latest GMP headline padh kar Rs value nikalta hai"""
+    query = quote_plus(f"{company_name} IPO GMP today")
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
+    try:
+        resp = requests.get(rss_url, timeout=10)
+        if resp.status_code != 200:
+            return 0.0
+        root = ET.fromstring(resp.text)
+        for item in root.findall(".//item")[:5]:
+            title = item.findtext("title") or ""
+            # Match patterns like 'GMP at Rs 85', 'GMP ₹120', 'GMP of Rs. 45'
+            match = re.search(r'GMP[^\d₹Rs]{0,15}(?:₹|Rs\.?|INR)?\s*(\d{1,4})', title, re.IGNORECASE)
+            if match:
+                return float(match.group(1))
+    except Exception:
+        pass
+    return 0.0
 
-def fetch_from_ipowatch():
-    url = "https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/"
-    resp = requests.get(url, headers=HEADERS, timeout=25)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    tables = soup.find_all("table")
-    records = []
+def get_nse_session():
+    session = requests.Session()
+    session.headers.update(NSE_HEADERS)
+    try:
+        session.get("https://www.nseindia.com/market-data/all-upcoming-issues-ipo", timeout=15)
+        time.sleep(1)
+    except Exception as e:
+        print(f"NSE cookie init warning: {e}")
+    return session
 
-    for table in tables:
-        rows = table.find_all("tr")
-        if len(rows) < 3:
-            continue
-        header_text = rows[0].get_text(" ", strip=True).lower()
-        if "ipo" not in header_text or "gmp" not in header_text:
-            continue
+def fetch_nse_ipos():
+    session = get_nse_session()
+    all_items = []
 
-        for row in rows[1:]:
-            cols = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
-            if len(cols) < 4:
-                continue
-            raw_name = cols[0].strip()
-            if not raw_name or "ipo name" in raw_name.lower():
-                continue
+    endpoints = [
+        ("https://www.nseindia.com/api/ipo-current-issue", "Open"),
+        ("https://www.nseindia.com/api/ipo-upcoming", "Upcoming")
+    ]
 
-            company_name = re.sub(r'\s*\(.*?\)', '', raw_name).replace(" IPO", "").strip()
-            category = "SME" if "sme" in raw_name.lower() or "sme" in " ".join(cols).lower() else "Mainboard"
+    for url, default_status in endpoints:
+        try:
+            resp = session.get(url, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    for row in data:
+                        row["_default_status"] = default_status
+                        all_items.append(row)
+        except Exception as e:
+            print(f"NSE endpoint error ({url}): {e}")
 
-            # Columns generally: IPO Name | Price | GMP | Est Listing | Fire/Dates
-            p_min, p_max = parse_price_range(cols[1])
-            gmp_val = parse_number(cols[2], 0.0)
-
-            open_dt, close_dt = None, None
-            for col in cols[3:]:
-                if "-" in col and any(m in col for m in ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]):
-                    parts = col.split("-")
-                    if len(parts) == 2:
-                        close_dt = parse_date(parts[1].strip())
-                        open_part = parts[0].strip()
-                        if len(open_part) <= 2 and close_dt:
-                            month_yr = datetime.strptime(close_dt, "%Y-%m-%d").strftime("%b %Y")
-                            open_dt = parse_date(f"{open_part} {month_yr}")
-                        else:
-                            open_dt = parse_date(open_part)
-
-            status = detect_status(open_dt, close_dt, " ".join(cols))
-
-            records.append({
-                "slug": make_slug(company_name),
-                "company_name": company_name,
-                "category": category,
-                "status": status,
-                "issue_price_min": p_min,
-                "issue_price_max": p_max,
-                "gmp_price": gmp_val,
-                "open_date": open_dt,
-                "close_date": close_dt,
-                "seo_title": f"{company_name} IPO GMP Today, Price Band, Allotment & Listing Date",
-                "meta_description": f"{company_name} {category} IPO live GMP today is ₹{int(gmp_val)}. Check latest price band, dates, and subscription status on NiveshKhabar24.",
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            })
-        if records:
-            break
-    return records
+    return all_items
 
 def sync_ipos():
-    print("Fetching live IPO GMP data...")
-    try:
-        records = fetch_from_ipowatch()
-    except Exception as e:
-        print(f"Fetch error: {e}")
-        records = []
-
-    if not records:
-        print("Still 0 records fetched. Check source layout.")
+    print("Fetching Official NSE Current & Upcoming IPOs...")
+    items = fetch_nse_ipos()
+    if not items:
+        print("NSE returned 0 items. Keeping existing database rows intact.")
         return
 
+    today = datetime.now().strftime("%Y-%m-%d")
     synced = 0
-    for rec in records[:25]:
-        try:
-            supabase.table("ipos").upsert(rec, on_conflict="slug").execute()
-            synced += 1
-            print(f"Synced: {rec['company_name']} ({rec['category']}) | Price: ₹{rec['issue_price_max']} | GMP: ₹{rec['gmp_price']}")
-        except Exception as err:
-            print(f"DB Error for {rec['company_name']}: {err}")
 
-    print(f"Successfully synced {synced} live IPOs to Supabase!")
+    for item in items:
+        raw_name = str(item.get("companyName") or item.get("symbol") or "").strip()
+        if not raw_name:
+            continue
+
+        company_name = re.sub(r'\s+Limited$|\s+Ltd\.?$', '', raw_name, flags=re.IGNORECASE).strip()
+        series = str(item.get("series") or item.get("securityType") or "").upper()
+        category = "SME" if "SME" in series or "EMERGE" in series else "Mainboard"
+
+        open_dt = parse_nse_date(item.get("issueStartDate"))
+        close_dt = parse_nse_date(item.get("issueEndDate"))
+
+        status = item.get("_default_status", "Upcoming")
+        if open_dt and close_dt:
+            if open_dt <= today <= close_dt:
+                status = "Open"
+            elif today < open_dt:
+                status = "Upcoming"
+            else:
+                status = "Closed"
+
+        p_min, p_max = parse_price_band(item.get("issuePrice") or item.get("priceBand"))
+        lot_size = int(float(item.get("lotSize") or 0))
+        sub_total = float(item.get("noOfTime") or 0)
+
+        gmp_val = fetch_gmp_from_google_rss(company_name)
+
+        record = {
+            "slug": make_slug(company_name),
+            "company_name": company_name,
+            "category": category,
+            "status": status,
+            "issue_price_min": p_min,
+            "issue_price_max": p_max,
+            "lot_size": lot_size,
+            "open_date": open_dt,
+            "close_date": close_dt,
+            "gmp_price": gmp_val,
+            "total_sub": sub_total,
+            "seo_title": f"{company_name} IPO GMP Today, Price Band, Allotment & Listing Date",
+            "meta_description": f"{company_name} {category} IPO status is {status}. Check latest GMP (₹{int(gmp_val)}), price band, lot size, and dates on NiveshKhabar24.",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        try:
+            supabase.table("ipos").upsert(record, on_conflict="slug").execute()
+            synced += 1
+            print(f"Synced: {company_name} | {category} | Status: {status} | GMP: ₹{gmp_val}")
+        except Exception as err:
+            print(f"DB Error ({company_name}): {err}")
+
+    print(f"Done! Synced {synced} official IPOs.")
 
 if __name__ == "__main__":
     sync_ipos()
