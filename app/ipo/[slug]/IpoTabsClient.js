@@ -42,13 +42,12 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
     { id: "faq", label: "7. Hindi FAQs" },
   ];
 
-  const sebiSearchUrl = `https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10`;
-  const nseSearchUrl = `https://www.nseindia.com/market-data/all-upcoming-issues-ipo`;
+  const sebiSearchUrl = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10";
+  const nseSearchUrl = "https://www.nseindia.com/market-data/all-upcoming-issues-ipo";
   const pdfUrl = ipo.drhp_url || ipo.rhp_url || "";
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Tab Navigation Bar */}
       <div className="flex flex-wrap gap-2 p-3 bg-slate-50 border-b border-slate-200">
         {tabs.map((tab) => (
           <button
@@ -66,7 +65,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
       </div>
 
       <div className="p-5 sm:p-6">
-        {/* TAB 1: OVERVIEW, DATES & 350-WORD DEVANAGARI HINDI BLOG */}
         {activeTab === "overview" && (
           <div className="space-y-6">
             <div>
@@ -119,7 +117,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
               </div>
             </div>
 
-            {/* 300-400 Words Devanagari Hindi SEO Analysis */}
             <article className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4 text-slate-800 leading-relaxed text-sm sm:text-base">
               <h3 className="text-lg font-bold text-slate-900">
                 {ipo.company_name} IPO की पूरी जानकारी और विश्लेषण (हिंदी में)
@@ -134,14 +131,9 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
               </p>
               <p>
                 <strong>लॉट साइज़ और न्यूनतम निवेश:</strong> रिटेल निवेशकों को इस आईपीओ में आवेदन करने के लिए कम से कम{" "}
-                {lotSize > 0 ? (
-                  <>
-                    <strong>1 लॉट यानी {lotSize} शेयरों</strong> के लिए बोली लगानी होगी, जिसके लिए ऊपरी प्राइस बैंड पर{" "}
-                    <strong>₹{minInvestment.toLocaleString("en-IN")}</strong> की पूंजी आवश्यक होगी।
-                  </>
-                ) : (
-                  <>कंपनी द्वारा निर्धारित न्यूनतम 1 लॉट के लिए बोली लगानी होगी।</>
-                )}{" "}
+                {lotSize > 0
+                  ? `1 लॉट यानी ${lotSize} शेयरों के लिए बोली लगानी होगी, जिसके लिए ऊपरी प्राइस बैंड पर ₹${minInvestment.toLocaleString("en-IN")} की पूंजी आवश्यक होगी।`
+                  : "कंपनी द्वारा निर्धारित न्यूनतम 1 लॉट के लिए बोली लगानी होगी।"}{" "}
                 इस पब्लिक इश्यू से जुटाई गई राशि का उपयोग कंपनी अपने कारोबार के विस्तार, कार्यशील पूंजी (Working Capital) की ज़रूरतों को पूरा करने और सामान्य कॉर्पोरेट उद्देश्यों के लिए करेगी।
               </p>
               <p>
@@ -159,7 +151,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 2: DATE-WISE LIVE GMP HISTORY */}
         {activeTab === "gmp" && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
@@ -215,7 +206,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 3: LIVE SUBSCRIPTION */}
         {activeTab === "subscription" && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
@@ -252,7 +242,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 4: DRHP / RHP PDF DIRECT VIEW & DOWNLOAD */}
         {activeTab === "drhp" && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
@@ -307,7 +296,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 5: REVIEW */}
         {activeTab === "review" && (
           <div className="space-y-3 text-sm sm:text-base text-slate-800 leading-relaxed">
             <h2 className="text-lg font-bold text-slate-900">
@@ -320,7 +308,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 6: ALLOTMENT STATUS */}
         {activeTab === "allotment" && (
           <div className="space-y-3 text-sm text-slate-800">
             <h2 className="text-lg font-bold text-slate-900">
@@ -337,7 +324,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* TAB 7: HINDI FAQS */}
         {activeTab === "faq" && (
           <div className="space-y-4 text-sm text-slate-800">
             <h2 className="text-lg font-bold text-slate-900">
