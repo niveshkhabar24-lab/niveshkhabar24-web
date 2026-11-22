@@ -4,6 +4,7 @@ import io
 import time
 import requests
 from datetime import datetime, timezone
+from urllib.parse import quote
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 from supabase import create_client, Client
@@ -35,6 +36,22 @@ IG_HEADERS = {
     "Accept": "application/json, text/html, */*",
     "Referer": "https://www.investorgain.com/report/live-ipo-gmp/331/",
 }
+
+HINDI_MONTHS = {
+    1: "जनवरी", 2: "फ़रवरी", 3: "मार्च", 4: "अप्रैल",
+    5: "मई", 6: "जून", 7: "जुलाई", 8: "अगस्त",
+    9: "सितंबर", 10: "अक्टूबर", 11: "नवंबर", 12: "दिसंबर"
+}
+
+
+def format_hindi_date(date_str) -> str:
+    if not date_str:
+        return "जल्द घोषित"
+    try:
+        dt = datetime.strptime(str(date_str).strip()[:10], "%Y-%m-%d")
+        return f"{dt.day:02d} {HINDI_MONTHS[dt.month]} {dt.year}"
+    except Exception:
+        return str(date_str)
 
 
 def make_slug(name: str) -> str:
@@ -135,8 +152,31 @@ def is_valid_active_ipo(ipo: dict) -> bool:
     return True
 
 
+def fetch_company_logo(company_name: str, website_url: str = "") -> str:
+    """Company ke official domain ya Clearbit API se high-res logo URL nikalta hai"""
+    domain = ""
+    if website_url:
+        cleaned = re.sub(r"^https?://(www\.)?", "", website_url.strip().lower()).split("/")[0]
+        if "." in cleaned:
+            domain = cleaned
+
+    if not domain:
+        clean_words = re.sub(r"\b(limited|ltd|private|pvt|india|ipo|sme)\b", "", company_name.lower())
+        slug_domain = re.sub(r"[^a-z0-9]", "", clean_words)
+        if slug_domain:
+            candidate = f"{slug_domain}.com"
+            try:
+                r = requests.head(f"https://logo.clearbit.com/{candidate}", timeout=4)
+                if r.status_code == 200:
+                    return f"https://logo.clearbit.com/{candidate}"
+            except Exception:
+                pass
+            return f"https://ui-avatars.com/api/?name={quote(company_name)}&background=0f766e&color=fff&size=200&bold=true"
+
+    return f"https://logo.clearbit.com/{domain}"
+
+
 def extract_pdf_insights(pdf_url: str) -> dict:
-    """DRHP/RHP PDF ke shuruati pages padhkar business sector, issue type aur key facts nikalta hai"""
     insights = {
         "sector": "",
         "is_ofs": False,
@@ -144,7 +184,7 @@ def extract_pdf_insights(pdf_url: str) -> dict:
         "debt_repayment": False,
         "capex_expansion": False,
         "registrar": "",
-        "lead_managers": "",
+        "website": "",
     }
     if not pdf_url or not pdf_url.lower().endswith(".pdf"):
         return insights
@@ -154,7 +194,6 @@ def extract_pdf_insights(pdf_url: str) -> dict:
         if resp.status_code != 200:
             return insights
 
-        # Sirf pehle ~3 MB download karein taaki script fast rahe
         buf = io.BytesIO()
         downloaded = 0
         for chunk in resp.iter_content(chunk_size=65536):
@@ -173,6 +212,10 @@ def extract_pdf_insights(pdf_url: str) -> dict:
             sample_text += " " + txt
 
         lower_txt = re.sub(r"\s+", " ", sample_text).lower()
+
+        web_match = re.search(r"www\.[a-z0-9-]+\.(?:com|in|co\.in|org|net)", lower_txt)
+        if web_match:
+            insights["website"] = web_match.group(0)
 
         if "offer for sale" in lower_txt:
             insights["is_ofs"] = True
@@ -212,96 +255,121 @@ def extract_pdf_insights(pdf_url: str) -> dict:
 
 
 def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
-    """Har IPO ke real data aur DRHP/RHP PDF insights ke basis par unique Hindi blog + Pros & Cons banata hai"""
+    """Har IPO ke liye 650-800 shabd ka comprehensive Hindi analytical blog + short intro + Pros & Cons banata hai"""
     name = ipo["company_name"]
-    cat = ipo["category"]
-    p_min = ipo.get("price_min") or 0
-    p_max = ipo.get("price_max") or 0
-    lot = ipo.get("lot_size") or 0
-    size_cr = ipo.get("issue_size_cr") or 0
-    gmp = ipo.get("gmp_price") or 0
-    total_sub = ipo.get("total_sub") or 0
-    open_dt = ipo.get("open_date") or "जल्द घोषित"
-    close_dt = ipo.get("close_date") or "जल्द घोषित"
+    cat = ipo.get("category") or "Mainboard"
+    p_min = int(ipo.get("price_min") or 0)
+    p_max = int(ipo.get("price_max") or 0)
+    lot = int(ipo.get("lot_size") or 0)
+    size_cr = round(float(ipo.get("issue_size_cr") or 0), 2)
+    gmp = round(float(ipo.get("gmp_price") or 0), 2)
+    total_sub = round(float(ipo.get("total_sub") or 0), 2)
+    qib_sub = round(float(ipo.get("qib_sub") or 0), 2)
+    nii_sub = round(float(ipo.get("nii_sub") or 0), 2)
+    retail_sub = round(float(ipo.get("retail_sub") or 0), 2)
 
-    sector_line = (
-        f"यह कंपनी मुख्य रूप से {pdf_info['sector']} सेक्टर में काम करती है।"
+    open_hi = format_hindi_date(ipo.get("open_date"))
+    close_hi = format_hindi_date(ipo.get("close_date"))
+    allot_hi = format_hindi_date(ipo.get("allotment_date"))
+    list_hi = format_hindi_date(ipo.get("listing_date"))
+
+    sector_desc = (
+        f"यह कंपनी मुख्य रूप से {pdf_info['sector']} क्षेत्र में कार्यरत है और अपने उद्योग में स्थापित बाज़ार हिस्सेदारी रखती है।"
         if pdf_info.get("sector")
-        else f"यह कंपनी अपने सेक्टर में तेज़ी से विस्तार कर रही है और {cat} सेगमेंट में पब्लिक इश्यू लेकर आई है।"
+        else f"यह कंपनी अपने कार्यक्षेत्र में निरंतर विस्तार कर रही है और भारतीय पूंजी बाजार के {cat} सेगमेंट में अपनी हिस्सेदारी सूचीबद्ध कराने जा रही है।"
     )
 
-    issue_structure = ""
-    if pdf_info.get("is_ofs") and not pdf_info.get("has_fresh_issue"):
-        issue_structure = "DRHP/RHP दस्तावेज़ के अनुसार यह इश्यू पूरी तरह Offer for Sale (OFS) है, यानी इसकी राशि मौजूदा शेयरधारकों को जाएगी।"
-    elif pdf_info.get("has_fresh_issue") and pdf_info.get("is_ofs"):
-        issue_structure = "यह इश्यू Fresh Issue और Offer for Sale (OFS) दोनों का मिश्रण है, जिससे कंपनी को ग्रोथ कैपिटल भी मिलेगी।"
-    elif pdf_info.get("has_fresh_issue"):
-        issue_structure = "यह एक Fresh Issue है, जिसका पैसा सीधे कंपनी के बिज़नेस विस्तार और वर्किंग कैपिटल में लगेगा।"
+    short_about = (
+        f"{name} एक {cat} श्रेणी की कंपनी है जो {pdf_info['sector'] if pdf_info.get('sector') else 'अपने प्रमुख बिज़नेस सेगमेंट'} में सक्रिय है। "
+        f"कंपनी ₹{p_min}-₹{p_max} प्रति शेयर के प्राइस बैंड पर अपना पब्लिक इश्यू लेकर आई है, जो {open_hi} से {close_hi} तक निवेश के लिए खुला रहेगा।"
+    )
 
-    purpose_line = ""
+    if pdf_info.get("is_ofs") and not pdf_info.get("has_fresh_issue"):
+        issue_type_text = "कंपनी के ऑफर दस्तावेज़ (DRHP/RHP) के अनुसार यह पब्लिक इश्यू पूरी तरह से Offer for Sale (OFS) है। इसका अर्थ है कि इस IPO से प्राप्त होने वाली संपूर्ण राशि कंपनी के खाते में जाने के बजाय मौजूदा प्रमोटर्स और विक्रय करने वाले शेयरधारकों (Selling Shareholders) को प्राप्त होगी, और कंपनी पर कोई नया इक्विटी डायल्यूशन नहीं होगा।"
+    elif pdf_info.get("has_fresh_issue") and pdf_info.get("is_ofs"):
+        issue_type_text = "यह पब्लिक इश्यू Fresh Issue और Offer for Sale (OFS) दोनों का संतुलित संयोजन है। Fresh Issue से प्राप्त होने वाली पूंजी का उपयोग सीधे कंपनी के व्यवसाय विस्तार, नई परियोजनाओं और कार्यशील पूंजी की ज़रूरतों को पूरा करने में किया जाएगा, जबकि OFS का हिस्सा मौजूदा निवेशकों को आंशिक निकासी प्रदान करेगा।"
+    else:
+        issue_type_text = "इस पब्लिक इश्यू के माध्यम से जुटाई जाने वाली शुद्ध आय (Net Proceeds) का उपयोग कंपनी अपने दीर्घकालिक विकास लक्ष्यों को पूरा करने के लिए करेगी। इसमें मुख्य रूप से व्यवसाय विस्तार, कार्यशील पूंजी (Working Capital) की आवश्यकताओं को सुदृढ़ करना और सामान्य कॉर्पोरेट उद्देश्यों की पूर्ति शामिल है।"
+
+    purpose_detail = ""
     if pdf_info.get("debt_repayment") and pdf_info.get("capex_expansion"):
-        purpose_line = "कंपनी इस फंड का उपयोग नए प्रोजेक्ट्स (Capex) और पुराने कर्ज़ को कम करने के लिए करेगी, जिससे ब्याज खर्च घटेगा।"
+        purpose_detail = "विशेष रूप से कंपनी ने अपने Red Herring Prospectus में स्पष्ट किया है कि वह इस पूंजी का बड़ा हिस्सा नए विनिर्माण/बुनियादी ढांचे (Capex) के विस्तार और मौजूदा बैंक कर्ज़ (Borrowings) को चुकाने में लगाएगी। कर्ज़ कम होने से कंपनी के वार्षिक ब्याज खर्च में कमी आएगी, जिसका सीधा सकारात्मक प्रभाव शुद्ध मुनाफ़े (PAT) पर दिखाई देगा।"
     elif pdf_info.get("capex_expansion"):
-        purpose_line = "जुटाई गई पूंजी का मुख्य हिस्सा नई उत्पादन क्षमता और बुनियादी ढांचे के विस्तार पर खर्च किया जाएगा।"
+        purpose_detail = "कंपनी की योजना इस पूंजी से अपनी उत्पादन और सेवा क्षमता (Capacity Expansion) को बढ़ाने की है, जिससे आगामी वित्तीय वर्षों में राजस्व वृद्धि की नई संभावनाएं खुलेंगी।"
     elif pdf_info.get("debt_repayment"):
-        purpose_line = "कंपनी इस राशि का बड़ा हिस्सा अपने बकाया कर्ज़ चुकाने के लिए इस्तेमाल करेगी, जिससे बैलेंस शीट मज़बूत होगी।"
+        purpose_detail = "कंपनी इस इश्यू से प्राप्त राशि का उपयोग अपने बकाया कर्ज़ के पूर्व-भुगतान (Prepayment/Repayment) के लिए करेगी, जिससे कंपनी का Debt-to-Equity अनुपात बेहतर होगा और बैलेंस शीट अधिक मज़बूत बनेगी।"
 
     min_inv = p_max * lot if (p_max > 0 and lot > 0) else 0
-    lot_text = (
-        f"रिटेल निवेशकों के लिए 1 लॉट में {lot} शेयर रखे गए हैं, जिसके लिए ऊपरी प्राइस बैंड ₹{p_max} पर न्यूनतम ₹{min_inv:,} का निवेश करना होगा।"
-        if min_inv > 0
-        else f"इसका प्राइस बैंड ₹{p_min} से ₹{p_max} प्रति शेयर तय किया गया है और लॉट साइज़ की आधिकारिक पुष्टि एक्सचेंज पर अपडेट की जा रही है।"
-    )
+    if min_inv > 0:
+        lot_detail = (
+            f"खुदरा निवेशकों (Retail Individual Investors) के लिए कंपनी ने न्यूनतम 1 लॉट में {lot} शेयर निर्धारित किए हैं। "
+            f"ऊपरी प्राइस बैंड ₹{p_max} प्रति शेयर के हिसाब से 1 लॉट के लिए आवेदन करने हेतु न्यूनतम ₹{min_inv:,} की पूंजी आवश्यक होगी। "
+            f"एक रिटेल निवेशक अधिकतम ₹2,00,000 की सीमा तक बोली लगा सकता है, जबकि ₹2 लाख से ₹10 लाख के बीच आवेदन करने वाले निवेशकों को Small HNI (sNII) और ₹10 लाख से अधिक वालों को Big HNI (bNII) श्रेणी में गिना जाएगा।"
+        )
+    else:
+        lot_detail = (
+            f"इस IPO का प्राइस बैंड ₹{p_min} से ₹{p_max} प्रति शेयर तय किया गया है। रिटेल निवेशकों को आवेदन करने के लिए कम से कम 1 लॉट के लिए बोली लगानी होगी, "
+            f"जिसके सटीक शेयरों की संख्या एक्सचेंज के आधिकारिक सर्कुलर के अनुसार अपडेट की जा रही है। निवेशकों को सलाह दी जाती है कि वे हमेशा Cut-off Price (₹{p_max}) पर ही बोली लगाएं ताकि आवंटन की संभावना बनी रहे।"
+        )
 
     gain_pct = round((gmp / p_max) * 100, 2) if p_max > 0 else 0
-    est_price = p_max + gmp if p_max > 0 else gmp
-    gmp_text = (
-        f"ग्रे मार्केट में {name} IPO का लाइव GMP ₹{gmp} चल रहा है, जो ₹{p_max} के मुकाबले लगभग ₹{est_price} ({gain_pct}%) पर लिस्टिंग के संकेत देता है।"
-        if gmp > 0
-        else f"अभी ग्रे मार्केट में {name} IPO का GMP ₹0 पर शांत है, इसलिए निवेशकों को सब्सक्रिप्शन के आखिरी दिन QIB और NII मांग पर नज़र रखनी चाहिए।"
-    )
+    est_price = round(p_max + gmp, 2) if p_max > 0 else gmp
+    if gmp > 0:
+        gmp_detail = (
+            f"ग्रे मार्केट के ताज़ा आंकड़ों के अनुसार {name} IPO का लाइव GMP +₹{gmp} प्रति शेयर पर ट्रेड कर रहा है। "
+            f"यदि यही रुझान लिस्टिंग के दिन तक बना रहता है, तो ₹{p_max} के ऊपरी प्राइस बैंड के मुकाबले यह शेयर लगभग ₹{est_price} प्रति शेयर पर सूचीबद्ध हो सकता है, "
+            f"जो निवेशकों को लगभग {gain_pct}% के संभावित लिस्टिंग गेन (Listing Gain) का संकेत देता है। हालांकि, ग्रे मार्केट प्रीमियम अनौपचारिक होता है और बाजार की स्थिति के अनुसार बदलता रहता है।"
+        )
+    else:
+        gmp_detail = (
+            f"वर्तमान में ग्रे मार्केट में {name} IPO का GMP ₹0 के स्तर पर शांत बना हुआ है। इसका अर्थ है कि अनौपचारिक बाजार अभी संस्थागत निवेशकों (QIB) और HNI वर्ग की बोली का इंतज़ार कर रहा है। "
+            f"ऐसे मामलों में निवेशकों को जल्दबाजी करने के बजाय इश्यू के अंतिम दिन दोपहर 2 बजे तक लाइव सब्सक्रिप्शन आंकड़ों का आकलन करने के बाद ही अंतिम निर्णय लेना चाहिए।"
+        )
 
-    blog_paragraphs = [
-        f"1. कंपनी प्रोफ़ाइल और बिज़नेस मॉडल: {name} IPO भारतीय शेयर बाजार के {cat} प्लेटफॉर्म पर निवेश के लिए खुला है। {sector_line} यह इश्यू {open_dt} को बोली लगाने के लिए खुलेगा और {close_dt} को बंद होगा।",
-        f"2. इश्यू साइज़ और फंड का उपयोग: {f'इस पब्लिक इश्यू का कुल आकार लगभग ₹{size_cr} करोड़ है।' if size_cr > 0 else ''} {issue_structure} {purpose_line}".strip(),
-        f"3. लॉट साइज़ और निवेश की राशि: {lot_text} {('इस इश्यू का आधिकारिक रजिस्ट्रार ' + pdf_info['registrar'] + ' है।') if pdf_info.get('registrar') else ''}".strip(),
-        f"4. GMP और सब्सक्रिप्शन विश्लेषण: {gmp_text} {f'अब तक यह इश्यू कुल {total_sub}x सब्सक्राइब हो चुका है।' if total_sub > 0 else ''}".strip(),
+    reg_name = pdf_info.get("registrar") or "Link Intime / KFin Technologies / Bigshare Services"
+
+    sections = [
+        f"1. {name} IPO का परिचय और कंपनी प्रोफ़ाइल: भारतीय शेयर बाजार में निवेश के अवसर तलाश रहे खुदरा और संस्थागत निवेशकों के लिए {name} IPO एक महत्वपूर्ण पब्लिक इश्यू है। {sector_desc} यह इश्यू स्टॉक एक्सचेंज के {cat} प्लेटफॉर्म पर सूचीबद्ध होने के लिए लाया गया है। कंपनी ने अपने शेयरों का मूल्य दायरा (Price Band) ₹{p_min} से ₹{p_max} प्रति शेयर तय किया है। यह पब्लिक इश्यू {open_hi} को बोली लगाने के लिए खुलेगा और {close_hi} को शाम 5 बजे बंद होगा।",
+        f"2. महत्वपूर्ण तारीख़ें और अलॉटमेंट शेड्यूल: किसी भी IPO में सफल आवेदन के लिए उसकी समय-सारणी को समझना बेहद ज़रूरी है। {name} IPO की बोली प्रक्रिया {close_hi} को समाप्त होने के बाद शेयरों के आवंटन (Basis of Allotment) को {allot_hi} को अंतिम रूप दिए जाने की संभावना है। जिन निवेशकों को शेयर आवंटित नहीं होंगे, उनके बैंक खाते में ASBA/UPI के माध्यम से ब्लॉक की गई राशि की वापसी (Refund Initiation) अगले कार्यदिवस पर शुरू हो जाएगी, और सफल आवेदकों के डीमैट खाते में शेयर क्रेडिट कर दिए जाएंगे। इसके पश्चात {list_hi} को NSE और BSE पर कंपनी के शेयरों की आधिकारिक लिस्टिंग होगी।",
+        f"3. इश्यू साइज़ और जुटाई गई पूंजी का उपयोग (Objects of the Issue): {f'इस पब्लिक इश्यू का कुल आकार लगभग ₹{size_cr} करोड़ निर्धारित किया गया है।' if size_cr > 0 else 'इस पब्लिक इश्यू का आकार एक्सचेंज की फाइलिंग के अनुसार निर्धारित किया गया है।'} {issue_type_text} {purpose_detail}".strip(),
+        f"4. लॉट साइज़, न्यूनतम निवेश और निवेशक श्रेणियां: {lot_detail}",
+        f"5. लाइव सब्सक्रिप्शन स्थिति और संस्थागत मांग का विश्लेषण: किसी भी IPO की वास्तविक ताकत का अंदाज़ा उसके लाइव सब्सक्रिप्शन आंकड़ों से लगता है। ताज़ा एक्सचेंज डेटा के अनुसार {name} IPO अब तक कुल {total_sub}x गुना सब्सक्राइब हो चुका है। इसमें Qualified Institutional Buyers (QIB) वर्ग में {qib_sub}x, Non-Institutional Investors (NII/HNI) वर्ग में {nii_sub}x, और Retail Individual Investors (RII) वर्ग में {retail_sub}x गुना बोली दर्ज की गई है। विशेष रूप से QIB और NII वर्ग की मज़बूत भागीदारी कंपनी के मूल्यांकन (Valuation) पर बड़े फंड हाउस के भरोसे को दर्शाती है।",
+        f"6. ग्रे मार्केट प्रीमियम (GMP) और संभावित लिस्टिंग कीमत: {gmp_detail}",
+        f"7. अलॉटमेंट स्टेटस कैसे चेक करें और निवेश से पहले की सावधानियां: इस इश्यू का आधिकारिक रजिस्ट्रार {reg_name} है। अलॉटमेंट जारी होने के बाद निवेशक रजिस्ट्रार की वेबसाइट या BSE/NSE के IPO पोर्टल पर जाकर अपना PAN नंबर या Application नंबर दर्ज करके आसानी से अपना स्टेटस देख सकते हैं। निवेश से पहले कंपनी के पिछले 3 वर्षों के राजस्व (Revenue), शुद्ध लाभ (PAT Margin), और पीयर ग्रुप कंपनियों के P/E अनुपात की तुलना अवश्य करें, और केवल ग्रे मार्केट प्रीमियम के आधार पर निवेश का निर्णय न लें।"
     ]
 
-    # Dynamic Pros (Strengths)
     pros = []
     if size_cr >= 500:
-        pros.append(f"₹{size_cr} करोड़ का बड़ा इश्यू साइज़ होने के कारण संस्थागत निवेशकों (QIB) की भागीदारी और लिस्टिंग के बाद अच्छी लिक्विडिटी की उम्मीद है।")
+        pros.append(f"₹{size_cr} करोड़ का बड़ा इश्यू साइज़ होने के कारण संस्थागत निवेशकों (QIB) की सक्रिय भागीदारी और लिस्टिंग के बाद उच्च लिक्विडिटी की संभावना है।")
     else:
-        pros.append(f"{cat} सेगमेंट में तेज़ ग्रोथ क्षमता और अपने सेक्टर में स्थापित ग्राहक नेटवर्क।")
+        pros.append(f"{cat} सेगमेंट में कंपनी की मज़बूत पकड़ और अपने सेक्टर में विस्तार की स्पष्ट रणनीति।")
 
     if pdf_info.get("debt_repayment"):
-        pros.append("IPO से जुटाए गए फंड से कंपनी का कर्ज़ कम होगा, जिससे भविष्य में शुद्ध मुनाफ़ा (PAT Margin) सुधर सकता है।")
+        pros.append("IPO से प्राप्त राशि का उपयोग कर्ज़ चुकाने में होने से कंपनी का ब्याज बोझ कम होगा और शुद्ध मुनाफ़ा बढ़ेगा।")
     elif pdf_info.get("capex_expansion"):
-        pros.append("नए प्लांट/कैपेसिटी विस्तार पर निवेश से आने वाले वर्षों में कंपनी की आय बढ़ने की संभावना है।")
+        pros.append("नई उत्पादन क्षमता और बुनियादी ढांचे पर निवेश से भविष्य में आय और बाज़ार हिस्सेदारी बढ़ने की उम्मीद है।")
     else:
-        pros.append("ब्रांड पहचान और उद्योग में बढ़ती मांग से कंपनी को दीर्घकालिक लाभ मिल सकता है।")
+        pros.append("स्थापित ग्राहक आधार और अनुभवी प्रमोटर टीम कंपनी के दीर्घकालिक विकास को सहारा देती है।")
 
     if gmp > 0:
-        pros.append(f"ग्रे मार्केट में +₹{gmp} ({gain_pct}%) का सकारात्मक प्रीमियम शुरुआती लिस्टिंग गेन का संकेत दे रहा है।")
+        pros.append(f"ग्रे मार्केट में +₹{gmp} ({gain_pct}%) का सकारात्मक प्रीमियम शुरुआती लिस्टिंग गेन के संकेत दे रहा है।")
     elif total_sub >= 2:
-        pros.append(f"बाज़ार में {total_sub}x का मज़बूत सब्सक्रिप्शन निवेशकों के भरोसे को दर्शाता है।")
+        pros.append(f"एक्सचेंज पर {total_sub}x का मज़बूत सब्सक्रिप्शन निवेशकों के सकारात्मक रुझान को दर्शाता है।")
 
-    # Dynamic Cons (Risks)
     cons = []
     if pdf_info.get("is_ofs") and not pdf_info.get("has_fresh_issue"):
-        cons.append("यह इश्यू 100% Offer for Sale (OFS) है, इसलिए IPO से मिला पैसा कंपनी के विकास में नहीं बल्कि प्रमोटर्स/विक्रेताओं के पास जाएगा।")
+        cons.append("यह इश्यू 100% Offer for Sale (OFS) है, इसलिए जुटाई गई राशि कंपनी के विकास में नहीं बल्कि विक्रय करने वाले शेयरधारकों को जाएगी।")
     else:
-        cons.append("कच्चे माल की कीमतों में उतार-चढ़ाव और प्रतिस्पर्धी बाज़ार कंपनी के मार्जिन पर दबाव डाल सकते हैं।")
+        cons.append("कच्चे माल की लागत में उतार-चढ़ाव और उद्योग में बढ़ती प्रतिस्पर्धा कंपनी के ऑपरेटिंग मार्जिन पर दबाव डाल सकती है।")
 
     if gmp <= 0:
         cons.append("वर्तमान में ग्रे मार्केट प्रीमियम (GMP) ₹0 होने के कारण लिस्टिंग गेन को लेकर अनिश्चितता बनी हुई है।")
     if cat == "SME":
-        cons.append("SME कैटेगरी का IPO होने के कारण न्यूनतम निवेश राशि अधिक है और लिस्टिंग के बाद लोअर सर्किट/लिक्विडिटी का जोखिम रहता है।")
+        cons.append("SME कैटेगरी का IPO होने के कारण न्यूनतम निवेश राशि अधिक है और लिस्टिंग के बाद सर्किट लिमिट व लो-लिक्विडिटी का जोखिम रहता है।")
     else:
-        cons.append("यदि आखिरी दिन QIB सब्सक्रिप्शन कमज़ोर रहता है, तो लिस्टिंग पर दबाव देखने को मिल सकता है।")
+        cons.append("यदि अंतिम दिन QIB सब्सक्रिप्शन कमज़ोर रहता है या समग्र बाजार में गिरावट आती है, तो लिस्टिंग कीमत प्रभावित हो सकती है।")
 
-    return "\n\n".join(blog_paragraphs), " | ".join(pros), " | ".join(cons)
+    return short_about, "\n\n".join(sections), " | ".join(pros), " | ".join(cons)
 
 
 def fetch_nse_ipos() -> list:
@@ -355,10 +423,10 @@ def fetch_nse_ipos() -> list:
                 close_dt = parse_any_date(merged_raw.get("issueEndDate") or merged_raw.get("bidEndDate"))
                 list_dt = parse_any_date(merged_raw.get("listingDate"))
 
-                qib_sub = float(merged_raw.get("qibSubscription") or 0)
-                nii_sub = float(merged_raw.get("niiSubscription") or 0)
-                retail_sub = float(merged_raw.get("retailSubscription") or 0)
-                total_sub = float(merged_raw.get("noOfTime") or merged_raw.get("totalSubscription") or 0)
+                qib_sub = round(float(merged_raw.get("qibSubscription") or 0), 2)
+                nii_sub = round(float(merged_raw.get("niiSubscription") or 0), 2)
+                retail_sub = round(float(merged_raw.get("retailSubscription") or 0), 2)
+                total_sub = round(float(merged_raw.get("noOfTime") or merged_raw.get("totalSubscription") or 0), 2)
 
                 issue_size_raw = str(merged_raw.get("issueSize") or "0").replace(",", "")
                 nums = re.findall(r"\d+(?:\.\d+)?", issue_size_raw)
@@ -368,7 +436,6 @@ def fetch_nse_ipos() -> list:
                 else:
                     issue_size_cr = round(issue_size_num, 2)
 
-                # DRHP / RHP PDF Links agar NSE JSON mein hon
                 drhp_link = merged_raw.get("drhpUrl") or merged_raw.get("prospectusUrl") or ""
                 rhp_link = merged_raw.get("rhpUrl") or merged_raw.get("redHerringUrl") or ""
 
@@ -434,7 +501,7 @@ def fetch_bse_ipos() -> list:
                 close_dt = parse_any_date(item.get("End_Dt") or item.get("Close_Date") or item.get("Issue_Close_Date"))
                 list_dt = parse_any_date(item.get("Listing_Date"))
 
-                total_sub = float(str(item.get("No_of_Times") or item.get("Total_Sub") or 0).replace(",", "") or 0)
+                total_sub = round(float(str(item.get("No_of_Times") or item.get("Total_Sub") or 0).replace(",", "") or 0), 2)
                 issue_size_raw = str(item.get("Issue_Size") or item.get("Total_Issue_Size") or "0").replace(",", "")
                 nums = re.findall(r"\d+(?:\.\d+)?", issue_size_raw)
                 issue_size_num = float(nums[0]) if nums else 0
@@ -476,7 +543,6 @@ def fetch_bse_ipos() -> list:
 
 
 def fetch_sebi_drhp_links() -> dict:
-    """SEBI official filings page se latest DRHP/RHP PDF links map karta hai"""
     pdf_map = {}
     try:
         sebi_url = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10"
@@ -609,7 +675,6 @@ def sync_all():
             if not ipo["rhp_url"] and old_row.get("rhp_url"):
                 ipo["rhp_url"] = old_row["rhp_url"]
 
-        # SEBI PDF fallback
         if not ipo["drhp_url"]:
             for s_key, s_url in sebi_pdfs.items():
                 if len(key) >= 6 and (key in s_key or s_key in key):
@@ -618,11 +683,12 @@ def sync_all():
 
         ipo["gmp_price"] = matched_gmp if matched_gmp is not None else 0
 
-        # PDF read karke unique blog + Pros & Cons banayein
         target_pdf = ipo.get("rhp_url") or ipo.get("drhp_url") or ""
         pdf_insights = extract_pdf_insights(target_pdf)
-        blog_txt, pros_txt, cons_txt = generate_unique_analysis(ipo, pdf_insights)
+        short_about, blog_txt, pros_txt, cons_txt = generate_unique_analysis(ipo, pdf_insights)
 
+        ipo["logo_url"] = (old_row.get("logo_url") if old_row and old_row.get("logo_url") else "") or fetch_company_logo(ipo["company_name"], pdf_insights.get("website", ""))
+        ipo["company_about"] = short_about
         ipo["ai_blog_hindi"] = blog_txt
         ipo["pros_list"] = pros_txt
         ipo["cons_list"] = cons_txt
@@ -631,7 +697,6 @@ def sync_all():
         supabase.table("ipos").upsert(ipo, on_conflict="slug").execute()
         updated_count += 1
 
-    # DB mein pehle se maujood IPOs ko bhi unique analysis + Pros/Cons se update karein
     for row in (existing_res.data or []):
         key = normalize_company_key(row["company_name"])
         matched_gmp = gmp_map.get(key)
@@ -640,10 +705,12 @@ def sync_all():
 
         target_pdf = row.get("rhp_url") or row.get("drhp_url") or ""
         pdf_insights = extract_pdf_insights(target_pdf)
-        blog_txt, pros_txt, cons_txt = generate_unique_analysis(row, pdf_insights)
+        short_about, blog_txt, pros_txt, cons_txt = generate_unique_analysis(row, pdf_insights)
 
         patch = {
             "gmp_price": row.get("gmp_price") or 0,
+            "logo_url": row.get("logo_url") or fetch_company_logo(row["company_name"], pdf_insights.get("website", "")),
+            "company_about": short_about,
             "ai_blog_hindi": blog_txt,
             "pros_list": pros_txt,
             "cons_list": cons_txt,
@@ -653,7 +720,7 @@ def sync_all():
         supabase.table("ipos").update(patch).eq("id", row["id"]).execute()
         updated_count += 1
 
-    print(f"Sync + PDF Analysis Complete! Updated records: {updated_count}")
+    print(f"Sync + 700-Word Blog + Logo Complete! Updated: {updated_count}")
 
 
 if __name__ == "__main__":
