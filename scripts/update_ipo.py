@@ -44,6 +44,12 @@ HINDI_MONTHS = {
 }
 
 
+def clean_html_text(val) -> str:
+    if val is None:
+        return ""
+    return BeautifulSoup(str(val), "html.parser").get_text(" ", strip=True)
+
+
 def format_hindi_date(date_str) -> str:
     if not date_str:
         return "जल्द घोषित"
@@ -63,8 +69,8 @@ def make_slug(name: str) -> str:
 
 
 def normalize_company_key(name: str) -> str:
-    s = name.lower()
-    for word in ["limited", "ltd.", "ltd", "ipo", "sme", "india", "private", "pvt.", "the"]:
+    s = clean_html_text(name).lower()
+    for word in ["limited", "ltd.", "ltd", "ipo", "sme", "india", "private", "pvt.", "the", "nse", "bse"]:
         s = re.sub(rf"\b{re.escape(word)}\b", "", s)
     return re.sub(r"[^a-z0-9]", "", s).strip()
 
@@ -72,7 +78,8 @@ def normalize_company_key(name: str) -> str:
 def parse_price_band(price_str):
     if not price_str:
         return 0, 0
-    nums = re.findall(r"\d+(?:\.\d+)?", str(price_str).replace(",", ""))
+    clean = clean_html_text(price_str).replace(",", "")
+    nums = re.findall(r"\d+(?:\.\d+)?", clean)
     if len(nums) >= 2:
         return int(float(nums[0])), int(float(nums[1]))
     elif len(nums) == 1:
@@ -82,9 +89,21 @@ def parse_price_band(price_str):
 
 
 def parse_any_date(date_str):
-    if not date_str or str(date_str).strip() in ["-", "TBA", "N/A", "None", ""]:
+    if not date_str:
         return None
-    clean_dt = str(date_str).strip().split("T")[0]
+    clean_dt = clean_html_text(date_str).split("T")[0].strip()
+    if clean_dt in ["-", "TBA", "N/A", "None", ""]:
+        return None
+    clean_dt = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", clean_dt, flags=re.IGNORECASE)
+    # Remove trailing time like "23-Nov-2026 14:30" or "23 Nov 2026 (Mon)"
+    clean_dt = re.sub(r"\(.*?\)", "", clean_dt).strip()
+    clean_dt = re.sub(r"\s+\d{1,2}:\d{2}(?::\d{2})?.*$", "", clean_dt).strip()
+
+    m_short = re.match(r"^(\d{1,2})[-\s]+([A-Za-z]{3})\b", clean_dt)
+    if m_short and not re.search(r"20\d{2}", clean_dt):
+        yr = datetime.now(timezone.utc).year
+        clean_dt = f"{m_short.group(1)}-{m_short.group(2)}-{yr}"
+
     for fmt in ("%d-%b-%Y", "%d %b %Y", "%Y-%m-%d", "%d/%m/%Y", "%b %d, %Y", "%d-%m-%Y", "%d %B %Y"):
         try:
             return datetime.strptime(clean_dt, fmt).strftime("%Y-%m-%d")
@@ -210,10 +229,8 @@ def parse_pdf_date_match(raw_str: str):
 
 
 def extract_3yr_financials(clean_txt: str) -> dict:
-    """RHP/DRHP ke Summary of Financial Information se 3 saal ka Revenue, PAT aur Net Worth nikalta hai"""
     unit = "₹ Crore" if "in ₹ crore" in clean_txt.lower() or "rupees in crores" in clean_txt.lower() else "₹ Million"
 
-    # Years detect karein (jaise FY24, FY25, FY26 ya March 31, 2024 / 2025 / 2026)
     yr_matches = re.findall(r"(?:march\s+31,?\s+|fy\s*)(202[2-6])", clean_txt, re.IGNORECASE)
     unique_years = []
     for y in yr_matches:
@@ -247,7 +264,6 @@ def extract_3yr_financials(clean_txt: str) -> dict:
 
     if len(rev_vals) >= 2 and len(pat_vals) >= 2:
         count = min(len(unique_years), len(rev_vals), len(pat_vals))
-        # Ensure chronological order (ascending)
         rows = []
         for idx in range(count):
             rows.append({
@@ -335,38 +351,18 @@ def extract_pdf_insights(pdf_url: str) -> dict:
             insights["capex_expansion"] = True
 
         for reg in [
-            "KFin Technologies",
-            "Link Intime",
-            "MUFG Intime",
-            "Bigshare Services",
-            "Skyline Financial",
-            "Maashitla Securities",
-            "Cameo Corporate",
-            "Purva Sharegistry",
+            "KFin Technologies", "Link Intime", "MUFG Intime", "Bigshare Services",
+            "Skyline Financial", "Maashitla Securities", "Cameo Corporate", "Purva Sharegistry",
         ]:
             if reg.lower() in lower_txt:
                 insights["registrar"] = reg
                 break
 
         for brlm in [
-            "ICICI Securities",
-            "Kotak Mahindra Capital",
-            "Axis Capital",
-            "SBI Capital Markets",
-            "JM Financial",
-            "IIFL Securities",
-            "Motilal Oswal",
-            "Nuvama Wealth",
-            "DAM Capital",
-            "Jefferies India",
-            "Morgan Stanley",
-            "Goldman Sachs",
-            "Citigroup",
-            "HDFC Bank",
-            "Pantomath Capital",
-            "Beeline Capital",
-            "Hem Securities",
-            "GYR Capital",
+            "ICICI Securities", "Kotak Mahindra Capital", "Axis Capital", "SBI Capital Markets",
+            "JM Financial", "IIFL Securities", "Motilal Oswal", "Nuvama Wealth", "DAM Capital",
+            "Jefferies India", "Morgan Stanley", "Goldman Sachs", "Citigroup", "HDFC Bank",
+            "Pantomath Capital", "Beeline Capital", "Hem Securities", "GYR Capital",
         ]:
             if brlm.lower() in lower_txt and brlm not in insights["lead_managers"]:
                 insights["lead_managers"].append(brlm)
@@ -397,7 +393,6 @@ def extract_pdf_insights(pdf_url: str) -> dict:
 
 
 def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
-    """700-800 shabd ka Hindi analytical blog + 6-7 deep Pros & Cons banata hai"""
     name = ipo["company_name"]
     cat = ipo.get("category") or "Mainboard"
     p_min = int(ipo.get("issue_price_min") or 0)
@@ -481,7 +476,6 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
         f"7. अलॉटमेंट स्टेटस कैसे चेक करें और निवेश से पहले की सावधानियां: इस इश्यू का आधिकारिक रजिस्ट्रार {reg_name} है। अलॉटमेंट जारी होने के बाद निवेशक रजिस्ट्रार की वेबसाइट या BSE/NSE के IPO पोर्टल पर जाकर अपना PAN नंबर या Application नंबर दर्ज करके आसानी से अपना स्टेटस देख सकते हैं। नीचे दिए गए 3 साल के वित्तीय चार्ट और Pros-Cons का अवलोकन अवश्य करें।"
     ]
 
-    # 6-7 Comprehensive Pros (Strengths)
     pros = []
     if size_cr >= 500:
         pros.append(f"₹{size_cr} करोड़ का बड़ा इश्यू साइज़ होने के कारण संस्थागत निवेशकों (QIB) की सक्रिय भागीदारी और लिस्टिंग के बाद उच्च लिक्विडिटी की संभावना है।")
@@ -495,7 +489,7 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
         pros.append("स्थापित ग्राहक आधार और अनुभवी प्रमोटर व मैनेजमेंट टीम कंपनी के दीर्घकालिक संचालन को मज़बूती देती है।")
 
     if len(fin_rows) >= 2 and fin_rows[-1]["profit"] > fin_rows[0]["profit"] and fin_rows[-1]["profit"] > 0:
-        pros.append(f"शुद्ध मुनाफ़े (PAT) में मज़बूत सुधार देखा गया है, जो कंपनी की बेहतर परिचालन दक्षता (Operational Efficiency) को दर्शाता है।")
+        pros.append("शुद्ध मुनाफ़े (PAT) में मज़बूत सुधार देखा गया है, जो कंपनी की बेहतर परिचालन दक्षता (Operational Efficiency) को दर्शाता है।")
     elif pdf_info.get("debt_repayment"):
         pros.append("IPO से प्राप्त राशि का उपयोग कर्ज़ चुकाने में होने से कंपनी का ब्याज बोझ कम होगा और शुद्ध मुनाफ़ा बढ़ेगा।")
     else:
@@ -518,7 +512,6 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
     else:
         pros.append("रिटेल निवेशकों के लिए न्यूनतम 1 लॉट में ₹15,000 के आसपास की सुलभ निवेश सीमा उपलब्ध है।")
 
-    # 6 Comprehensive Cons (Risks)
     cons = []
     if pdf_info.get("is_ofs") and not pdf_info.get("has_fresh_issue"):
         cons.append("यह इश्यू 100% Offer for Sale (OFS) है, इसलिए जुटाई गई राशि कंपनी के विकास में नहीं बल्कि विक्रय करने वाले शेयरधारकों को जाएगी।")
@@ -767,7 +760,13 @@ def merge_nse_and_bse(nse_list: list, bse_list: list) -> list:
 
 def fetch_investorgain_data() -> dict:
     ig_map = {}
+    now = datetime.now(timezone.utc)
+    yr = now.year
+    mn = now.month
+    fy = f"{yr}-{str(yr + 1)[-2:]}" if mn >= 4 else f"{yr - 1}-{str(yr)[-2:]}"
+
     urls = [
+        f"https://webnodejs.investorgain.com/cloud/report/data-read/331/1/{mn}/{yr}/{fy}/0/all",
         "https://webnodejs.investorgain.com/cloud/report/data-read/331/1/11/2026/2026-27/0/all",
         "https://www.investorgain.com/report/live-ipo-gmp/331/",
     ]
@@ -781,12 +780,28 @@ def fetch_investorgain_data() -> dict:
             if "application/json" in resp.headers.get("Content-Type", ""):
                 payload = resp.json()
                 for r in payload.get("reportTableData", []):
-                    raw_name = BeautifulSoup(str(r.get("Name") or r.get("IPO") or ""), "html.parser").get_text(" ", strip=True)
-                    raw_gmp = BeautifulSoup(str(r.get("GMP") or "0"), "html.parser").get_text(" ", strip=True)
+                    raw_name = clean_html_text(r.get("Name") or r.get("IPO") or "")
+                    raw_gmp = clean_html_text(r.get("GMP") or "0")
                     nums = re.findall(r"-?\d+(?:\.\d+)?", raw_gmp.replace(",", ""))
+
+                    raw_lot = clean_html_text(r.get("Lot") or r.get("Lot Size") or "0")
+                    lot_nums = re.findall(r"\d+", raw_lot.replace(",", ""))
+                    lot_val = int(lot_nums[0]) if lot_nums else 0
+
+                    raw_price = clean_html_text(r.get("Price") or r.get("Price Band") or "0")
+                    price_nums = re.findall(r"\d+(?:\.\d+)?", raw_price.replace(",", ""))
+                    price_val = int(float(price_nums[-1])) if price_nums else 0
+
+                    ig_id = str(r.get("id") or r.get("~id") or "").strip()
+                    folder_slug = str(r.get("~urlrewrite_folder_name") or "").strip()
+
                     if raw_name and nums:
                         ig_map[normalize_company_key(raw_name)] = {
+                            "ig_id": ig_id,
+                            "folder_slug": folder_slug,
                             "gmp": float(nums[0]),
+                            "lot_size": lot_val,
+                            "price_max": price_val,
                             "open_date": parse_any_date(r.get("Open") or r.get("Start Date")),
                             "close_date": parse_any_date(r.get("Close") or r.get("End Date")),
                             "allotment_date": parse_any_date(r.get("BoA Dt") or r.get("Allotment") or r.get("Allotment Date")),
@@ -802,9 +817,14 @@ def fetch_investorgain_data() -> dict:
                     cols = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
                     if len(cols) >= 3:
                         nums = re.findall(r"-?\d+(?:\.\d+)?", cols[2].replace(",", ""))
+                        lot_nums = re.findall(r"\d+", cols[5].replace(",", "")) if len(cols) > 5 else []
                         if cols[0] and nums:
                             ig_map[normalize_company_key(cols[0])] = {
+                                "ig_id": "",
+                                "folder_slug": "",
                                 "gmp": float(nums[0]),
+                                "lot_size": int(lot_nums[0]) if lot_nums else 0,
+                                "price_max": 0,
                                 "open_date": parse_any_date(cols[6]) if len(cols) > 6 else None,
                                 "close_date": parse_any_date(cols[7]) if len(cols) > 7 else None,
                                 "allotment_date": parse_any_date(cols[8]) if len(cols) > 8 else None,
@@ -816,6 +836,116 @@ def fetch_investorgain_data() -> dict:
             print(f"InvestorGain warning ({url}): {e}")
 
     return ig_map
+
+
+def fetch_and_save_gmp_history(ipo_slug: str, ig_info: dict, issue_price: int, fallback_gmp: float):
+    """InvestorGain se har IPO ki poori tareekh-waar GMP history nikal kar ipo_gmp_history mein save karta hai"""
+    history_rows = []
+    ig_id = (ig_info or {}).get("ig_id")
+    folder_slug = (ig_info or {}).get("folder_slug")
+
+    if ig_id:
+        candidate_urls = [
+            f"https://webnodejs.investorgain.com/cloud/ipo/ipo-gmp-read/{ig_id}/true",
+            f"https://webnodejs.investorgain.com/cloud/ipo/ipo-gmp-read/{ig_id}/false",
+        ]
+        if folder_slug:
+            candidate_urls.append(f"https://www.investorgain.com/gmp/{folder_slug}/{ig_id}/")
+
+        for url in candidate_urls:
+            try:
+                resp = requests.get(url, headers=IG_HEADERS, timeout=15)
+                if resp.status_code != 200:
+                    continue
+
+                if "application/json" in resp.headers.get("Content-Type", ""):
+                    payload = resp.json()
+                    raw_list = (
+                        payload.get("ipoGmpData")
+                        or payload.get("gmpData")
+                        or payload.get("reportTableData")
+                        or (payload if isinstance(payload, list) else [])
+                    )
+                    for row in raw_list:
+                        if not isinstance(row, dict):
+                            continue
+                        dt_val = parse_any_date(
+                            row.get("gmp_date") or row.get("GMP Date") or row.get("date") or row.get("Date")
+                        )
+                        gmp_raw = clean_html_text(row.get("gmp") or row.get("GMP") or row.get("gmp_price") or "")
+                        gmp_nums = re.findall(r"-?\d+(?:\.\d+)?", gmp_raw.replace(",", ""))
+
+                        p_raw = clean_html_text(row.get("ipo_price") or row.get("IPO Price") or row.get("price") or "")
+                        p_nums = re.findall(r"\d+(?:\.\d+)?", p_raw.replace(",", ""))
+                        row_price = int(float(p_nums[-1])) if p_nums else issue_price
+
+                        if dt_val and gmp_nums:
+                            history_rows.append({
+                                "ipo_slug": ipo_slug,
+                                "gmp_date": dt_val,
+                                "gmp_price": float(gmp_nums[0]),
+                                "ipo_price": row_price,
+                            })
+                    if history_rows:
+                        break
+
+                soup = BeautifulSoup(resp.text, "html.parser")
+                for tbl in soup.find_all("table"):
+                    headers_txt = " ".join(th.get_text(" ", strip=True).lower() for th in tbl.find_all("th"))
+                    if "gmp" in headers_txt and "date" in headers_txt:
+                        for tr in tbl.find_all("tr")[1:]:
+                            cols = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
+                            if len(cols) >= 3:
+                                dt_val = parse_any_date(cols[0])
+                                p_nums = re.findall(r"\d+(?:\.\d+)?", cols[1].replace(",", ""))
+                                gmp_nums = re.findall(r"-?\d+(?:\.\d+)?", cols[2].replace(",", ""))
+                                if dt_val and gmp_nums:
+                                    history_rows.append({
+                                        "ipo_slug": ipo_slug,
+                                        "gmp_date": dt_val,
+                                        "gmp_price": float(gmp_nums[0]),
+                                        "ipo_price": int(float(p_nums[-1])) if p_nums else issue_price,
+                                    })
+                        if history_rows:
+                            break
+                if history_rows:
+                    break
+            except Exception as e:
+                print(f"GMP History fetch warning ({ipo_slug}): {e}")
+
+    # Kam se kam aaj ki tareekh ka GMP zaroor ensure karein
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if not any(r["gmp_date"] == today_str for r in history_rows):
+        history_rows.append({
+            "ipo_slug": ipo_slug,
+            "gmp_date": today_str,
+            "gmp_price": fallback_gmp,
+            "ipo_price": issue_price,
+        })
+
+    # Duplicate dates hatakar Supabase mein save karein
+    dedup = {}
+    for item in history_rows:
+        dedup[item["gmp_date"]] = item
+
+    for rec in dedup.values():
+        try:
+            existing = (
+                supabase.table("ipo_gmp_history")
+                .select("id")
+                .eq("ipo_slug", rec["ipo_slug"])
+                .eq("gmp_date", rec["gmp_date"])
+                .execute()
+            )
+            if existing.data:
+                supabase.table("ipo_gmp_history").update({
+                    "gmp_price": rec["gmp_price"],
+                    "ipo_price": rec["ipo_price"],
+                }).eq("id", existing.data[0]["id"]).execute()
+            else:
+                supabase.table("ipo_gmp_history").insert(rec).execute()
+        except Exception as e:
+            print(f"GMP History DB save warning ({ipo_slug} - {rec['gmp_date']}): {e}")
 
 
 def fill_missing_dates(ipo_dict: dict, ig_info: dict = None):
@@ -877,6 +1007,11 @@ def sync_all():
             if not ipo["rhp_url"] and old_row.get("rhp_url"):
                 ipo["rhp_url"] = old_row["rhp_url"]
 
+        if ipo["lot_size"] == 0 and ig_info and ig_info.get("lot_size", 0) > 0:
+            ipo["lot_size"] = ig_info["lot_size"]
+        if ipo["issue_price_max"] == 0 and ig_info and ig_info.get("price_max", 0) > 0:
+            ipo["issue_price_max"] = ig_info["price_max"]
+
         if not ipo["drhp_url"]:
             for s_key, s_url in sebi_pdfs.items():
                 if len(key) >= 6 and (key in s_key or s_key in key):
@@ -907,6 +1042,7 @@ def sync_all():
         ipo["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         supabase.table("ipos").upsert(ipo, on_conflict="slug").execute()
+        fetch_and_save_gmp_history(ipo["slug"], ig_info, int(ipo.get("issue_price_max") or 0), matched_gmp)
         updated_count += 1
 
     for row in (existing_res.data or []):
@@ -927,12 +1063,15 @@ def sync_all():
             row["listing_date"] = pdf_insights["listing_date"]
         if ig_info:
             row["gmp_price"] = ig_info["gmp"]
-        fill_missing_dates(row, ig_info)
+            if (row.get("lot_size") or 0) == 0 and ig_info.get("lot_size", 0) > 0:
+                row["lot_size"] = ig_info["lot_size"]
 
+        fill_missing_dates(row, ig_info)
         short_about, blog_txt, pros_txt, cons_txt = generate_unique_analysis(row, pdf_insights)
 
         patch = {
             "gmp_price": row.get("gmp_price") or 0,
+            "lot_size": row.get("lot_size") or 0,
             "open_date": row.get("open_date"),
             "close_date": row.get("close_date"),
             "allotment_date": row.get("allotment_date"),
@@ -947,9 +1086,10 @@ def sync_all():
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         supabase.table("ipos").update(patch).eq("id", row["id"]).execute()
+        fetch_and_save_gmp_history(row["slug"], ig_info, int(row.get("issue_price_max") or 0), float(patch["gmp_price"] or 0))
         updated_count += 1
 
-    print(f"Sync + 3Yr Financials + 6-7 Pros/Cons Complete! Updated: {updated_count}")
+    print(f"Sync + Full GMP History + Lot Size Complete! Updated: {updated_count}")
 
 
 if __name__ == "__main__":
