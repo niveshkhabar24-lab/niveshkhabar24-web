@@ -95,7 +95,6 @@ def parse_any_date(date_str):
     if clean_dt in ["-", "TBA", "N/A", "None", ""]:
         return None
     clean_dt = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", clean_dt, flags=re.IGNORECASE)
-    # Remove trailing time like "23-Nov-2026 14:30" or "23 Nov 2026 (Mon)"
     clean_dt = re.sub(r"\(.*?\)", "", clean_dt).strip()
     clean_dt = re.sub(r"\s+\d{1,2}:\d{2}(?::\d{2})?.*$", "", clean_dt).strip()
 
@@ -784,7 +783,9 @@ def fetch_investorgain_data() -> dict:
                     raw_gmp = clean_html_text(r.get("GMP") or "0")
                     nums = re.findall(r"-?\d+(?:\.\d+)?", raw_gmp.replace(",", ""))
 
-                    raw_lot = clean_html_text(r.get("Lot") or r.get("Lot Size") or "0")
+                    raw_lot = clean_html_text(
+                        r.get("Lot") or r.get("Lot Size") or r.get("Market Lot") or r.get("lot_size") or "0"
+                    )
                     lot_nums = re.findall(r"\d+", raw_lot.replace(",", ""))
                     lot_val = int(lot_nums[0]) if lot_nums else 0
 
@@ -875,16 +876,11 @@ def fetch_and_save_gmp_history(ipo_slug: str, ig_info: dict, issue_price: int, f
                         gmp_raw = clean_html_text(row.get("gmp") or row.get("GMP") or row.get("gmp_price") or "")
                         gmp_nums = re.findall(r"-?\d+(?:\.\d+)?", gmp_raw.replace(",", ""))
 
-                        p_raw = clean_html_text(row.get("ipo_price") or row.get("IPO Price") or row.get("price") or "")
-                        p_nums = re.findall(r"\d+(?:\.\d+)?", p_raw.replace(",", ""))
-                        row_price = int(float(p_nums[-1])) if p_nums else issue_price
-
                         if dt_val and gmp_nums:
                             history_rows.append({
                                 "ipo_slug": ipo_slug,
                                 "gmp_date": dt_val,
                                 "gmp_price": float(gmp_nums[0]),
-                                "ipo_price": row_price,
                             })
                     if history_rows:
                         break
@@ -897,14 +893,12 @@ def fetch_and_save_gmp_history(ipo_slug: str, ig_info: dict, issue_price: int, f
                             cols = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
                             if len(cols) >= 3:
                                 dt_val = parse_any_date(cols[0])
-                                p_nums = re.findall(r"\d+(?:\.\d+)?", cols[1].replace(",", ""))
                                 gmp_nums = re.findall(r"-?\d+(?:\.\d+)?", cols[2].replace(",", ""))
                                 if dt_val and gmp_nums:
                                     history_rows.append({
                                         "ipo_slug": ipo_slug,
                                         "gmp_date": dt_val,
                                         "gmp_price": float(gmp_nums[0]),
-                                        "ipo_price": int(float(p_nums[-1])) if p_nums else issue_price,
                                     })
                         if history_rows:
                             break
@@ -913,20 +907,21 @@ def fetch_and_save_gmp_history(ipo_slug: str, ig_info: dict, issue_price: int, f
             except Exception as e:
                 print(f"GMP History fetch warning ({ipo_slug}): {e}")
 
-    # Kam se kam aaj ki tareekh ka GMP zaroor ensure karein
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if not any(r["gmp_date"] == today_str for r in history_rows):
         history_rows.append({
             "ipo_slug": ipo_slug,
             "gmp_date": today_str,
             "gmp_price": fallback_gmp,
-            "ipo_price": issue_price,
         })
 
-    # Duplicate dates hatakar Supabase mein save karein
     dedup = {}
     for item in history_rows:
-        dedup[item["gmp_date"]] = item
+        dedup[item["gmp_date"]] = {
+            "ipo_slug": item["ipo_slug"],
+            "gmp_date": item["gmp_date"],
+            "gmp_price": item["gmp_price"],
+        }
 
     for rec in dedup.values():
         try:
@@ -940,7 +935,6 @@ def fetch_and_save_gmp_history(ipo_slug: str, ig_info: dict, issue_price: int, f
             if existing.data:
                 supabase.table("ipo_gmp_history").update({
                     "gmp_price": rec["gmp_price"],
-                    "ipo_price": rec["ipo_price"],
                 }).eq("id", existing.data[0]["id"]).execute()
             else:
                 supabase.table("ipo_gmp_history").insert(rec).execute()
