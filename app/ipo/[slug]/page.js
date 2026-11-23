@@ -226,7 +226,7 @@ export default async function IPODetailPage({ params }) {
             <span className="text-xs text-slate-500 font-medium block">Est. Listing Price</span>
             <span className="text-xl font-extrabold text-slate-900">₹{estListing}</span>
             <span className="text-[11px] text-slate-500 block">
-              1 Lot Profit: {lotSize > 0 ? `₹${oneLotProfit.toLocaleString('en-IN')}` : 'TBA'}
+              Est. Profit: {lotSize > 0 ? `₹${oneLotProfit.toLocaleString('en-IN')}` : 'TBA'}
             </span>
           </div>
 
