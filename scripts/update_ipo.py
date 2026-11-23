@@ -1083,6 +1083,9 @@ def sync_all():
         fetch_and_save_gmp_history(row["slug"], ig_info, int(row.get("issue_price_max") or 0), float(patch["gmp_price"] or 0))
         updated_count += 1
 
+    print(f"DEBUG IG Count: {len(ig_map)} | Keys: {list(ig_map.keys())[:5]}")
+    for k, v in list(ig_map.items())[:2]:
+        print(f"DEBUG Sample IG -> {k}: {v}")
     print(f"Sync + Full GMP History + Lot Size Complete! Updated: {updated_count}")
 
 
