@@ -326,7 +326,7 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
                     <th className="py-2.5 px-4 font-bold">IPO Price</th>
                     <th className="py-2.5 px-4 font-bold">Live GMP</th>
                     <th className="py-2.5 px-4 font-bold">Est. Listing Price</th>
-                    <th className="py-2.5 px-4 font-bold">1 Lot Profit</th>
+                    <th className="py-2.5 px-4 font-bold">Est. Profit</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -552,3 +552,4 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
     </div>
   );
 }
+
