@@ -44,24 +44,6 @@ HINDI_MONTHS = {
 }
 
 
-def clean_html_text(val) -> str:
-    if val is None:
-        return ""
-    return BeautifulSoup(str(val), "html.parser").get_text(" ", strip=True)
-
-
-def extract_first_number(text, allow_negative=True, default=0.0) -> float:
-    clean = clean_html_text(text).replace(",", "")
-    pattern = r"-?\d+(?:\.\d+)?" if allow_negative else r"\d+(?:\.\d+)?"
-    nums = re.findall(pattern, clean)
-    if not nums:
-        return default
-    try:
-        return float(nums[0])
-    except ValueError:
-        return default
-
-
 def format_hindi_date(date_str) -> str:
     if not date_str:
         return "जल्द घोषित"
@@ -81,8 +63,8 @@ def make_slug(name: str) -> str:
 
 
 def normalize_company_key(name: str) -> str:
-    s = clean_html_text(name).lower()
-    for word in ["limited", "ltd.", "ltd", "ipo", "sme", "india", "private", "pvt.", "the", "nse", "bse"]:
+    s = name.lower()
+    for word in ["limited", "ltd.", "ltd", "ipo", "sme", "india", "private", "pvt.", "the"]:
         s = re.sub(rf"\b{re.escape(word)}\b", "", s)
     return re.sub(r"[^a-z0-9]", "", s).strip()
 
@@ -90,8 +72,7 @@ def normalize_company_key(name: str) -> str:
 def parse_price_band(price_str):
     if not price_str:
         return 0, 0
-    clean = clean_html_text(price_str).replace(",", "")
-    nums = re.findall(r"\d+(?:\.\d+)?", clean)
+    nums = re.findall(r"\d+(?:\.\d+)?", str(price_str).replace(",", ""))
     if len(nums) >= 2:
         return int(float(nums[0])), int(float(nums[1]))
     elif len(nums) == 1:
@@ -101,18 +82,9 @@ def parse_price_band(price_str):
 
 
 def parse_any_date(date_str):
-    if not date_str:
+    if not date_str or str(date_str).strip() in ["-", "TBA", "N/A", "None", ""]:
         return None
-    clean_dt = clean_html_text(date_str).split("T")[0].strip()
-    if clean_dt in ["-", "TBA", "N/A", "None", ""]:
-        return None
-    clean_dt = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", clean_dt, flags=re.IGNORECASE)
-    # Handle "23-Nov 14:02" or "23 Nov" by appending current year
-    m_short = re.match(r"^(\d{1,2})[-\s]+([A-Za-z]{3})\b", clean_dt)
-    if m_short and not re.search(r"20\d{2}", clean_dt):
-        yr = datetime.now(timezone.utc).year
-        clean_dt = f"{m_short.group(1)}-{m_short.group(2)}-{yr}"
-
+    clean_dt = str(date_str).strip().split("T")[0]
     for fmt in ("%d-%b-%Y", "%d %b %Y", "%Y-%m-%d", "%d/%m/%Y", "%b %d, %Y", "%d-%m-%Y", "%d %B %Y"):
         try:
             return datetime.strptime(clean_dt, fmt).strftime("%Y-%m-%d")
@@ -238,7 +210,10 @@ def parse_pdf_date_match(raw_str: str):
 
 
 def extract_3yr_financials(clean_txt: str) -> dict:
+    """RHP/DRHP ke Summary of Financial Information se 3 saal ka Revenue, PAT aur Net Worth nikalta hai"""
     unit = "₹ Crore" if "in ₹ crore" in clean_txt.lower() or "rupees in crores" in clean_txt.lower() else "₹ Million"
+
+    # Years detect karein (jaise FY24, FY25, FY26 ya March 31, 2024 / 2025 / 2026)
     yr_matches = re.findall(r"(?:march\s+31,?\s+|fy\s*)(202[2-6])", clean_txt, re.IGNORECASE)
     unique_years = []
     for y in yr_matches:
@@ -272,6 +247,7 @@ def extract_3yr_financials(clean_txt: str) -> dict:
 
     if len(rev_vals) >= 2 and len(pat_vals) >= 2:
         count = min(len(unique_years), len(rev_vals), len(pat_vals))
+        # Ensure chronological order (ascending)
         rows = []
         for idx in range(count):
             rows.append({
@@ -359,18 +335,38 @@ def extract_pdf_insights(pdf_url: str) -> dict:
             insights["capex_expansion"] = True
 
         for reg in [
-            "KFin Technologies", "Link Intime", "MUFG Intime", "Bigshare Services",
-            "Skyline Financial", "Maashitla Securities", "Cameo Corporate", "Purva Sharegistry",
+            "KFin Technologies",
+            "Link Intime",
+            "MUFG Intime",
+            "Bigshare Services",
+            "Skyline Financial",
+            "Maashitla Securities",
+            "Cameo Corporate",
+            "Purva Sharegistry",
         ]:
             if reg.lower() in lower_txt:
                 insights["registrar"] = reg
                 break
 
         for brlm in [
-            "ICICI Securities", "Kotak Mahindra Capital", "Axis Capital", "SBI Capital Markets",
-            "JM Financial", "IIFL Securities", "Motilal Oswal", "Nuvama Wealth", "DAM Capital",
-            "Jefferies India", "Morgan Stanley", "Goldman Sachs", "Citigroup", "HDFC Bank",
-            "Pantomath Capital", "Beeline Capital", "Hem Securities", "GYR Capital",
+            "ICICI Securities",
+            "Kotak Mahindra Capital",
+            "Axis Capital",
+            "SBI Capital Markets",
+            "JM Financial",
+            "IIFL Securities",
+            "Motilal Oswal",
+            "Nuvama Wealth",
+            "DAM Capital",
+            "Jefferies India",
+            "Morgan Stanley",
+            "Goldman Sachs",
+            "Citigroup",
+            "HDFC Bank",
+            "Pantomath Capital",
+            "Beeline Capital",
+            "Hem Securities",
+            "GYR Capital",
         ]:
             if brlm.lower() in lower_txt and brlm not in insights["lead_managers"]:
                 insights["lead_managers"].append(brlm)
@@ -387,7 +383,7 @@ def extract_pdf_insights(pdf_url: str) -> dict:
             "solar": "रिन्यूएबल एनर्जी और सोलर (Renewable Energy)",
             "financial": "बैंकिंग और फाइनेंशियल सर्विसेज (BFSI / NBFC)",
             "automobile": "ऑटोमोबाइल और ऑटो कंपोनेंट्स (Auto & Ancillary)",
-            "steel": "मेटल्स और स्टील मैन्युफक्चरिंग (Metals & Steel)",
+            "steel": "मेटल्स और स्टील मैन्युफैक्चरिंग (Metals & Steel)",
             "textile": "टेक्सटाइल और गारमेंट्स (Textiles & Apparel)",
         }
         for kw, label in sector_keywords.items():
@@ -401,6 +397,7 @@ def extract_pdf_insights(pdf_url: str) -> dict:
 
 
 def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
+    """700-800 shabd ka Hindi analytical blog + 6-7 deep Pros & Cons banata hai"""
     name = ipo["company_name"]
     cat = ipo.get("category") or "Mainboard"
     p_min = int(ipo.get("issue_price_min") or 0)
@@ -459,13 +456,11 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
 
     gain_pct = round((gmp / p_max) * 100, 2) if p_max > 0 else 0
     est_price = round(p_max + gmp, 2) if p_max > 0 else gmp
-    lot_profit = round(gmp * lot, 2) if (gmp != 0 and lot > 0) else 0
     if gmp > 0:
-        profit_txt = f" इस हिसाब से 1 लॉट ({lot} शेयर) पर लगभग ₹{int(lot_profit):,} का संभावित मुनाफ़ा बन सकता है।" if lot_profit > 0 else ""
         gmp_detail = (
             f"ग्रे मार्केट के ताज़ा आंकड़ों के अनुसार {name} IPO का लाइव GMP +₹{gmp} प्रति शेयर पर ट्रेड कर रहा है। "
             f"यदि यही रुझान लिस्टिंग के दिन तक बना रहता है, तो ₹{p_max} के ऊपरी प्राइस बैंड के मुकाबले यह शेयर लगभग ₹{est_price} प्रति शेयर पर सूचीबद्ध हो सकता है, "
-            f"जो निवेशकों को लगभग {gain_pct}% के संभावित लिस्टिंग गेन (Listing Gain) का संकेत देता है।{profit_txt}"
+            f"जो निवेशकों को लगभग {gain_pct}% के संभावित लिस्टिंग गेन (Listing Gain) का संकेत देता है।"
         )
     else:
         gmp_detail = (
@@ -486,6 +481,7 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
         f"7. अलॉटमेंट स्टेटस कैसे चेक करें और निवेश से पहले की सावधानियां: इस इश्यू का आधिकारिक रजिस्ट्रार {reg_name} है। अलॉटमेंट जारी होने के बाद निवेशक रजिस्ट्रार की वेबसाइट या BSE/NSE के IPO पोर्टल पर जाकर अपना PAN नंबर या Application नंबर दर्ज करके आसानी से अपना स्टेटस देख सकते हैं। नीचे दिए गए 3 साल के वित्तीय चार्ट और Pros-Cons का अवलोकन अवश्य करें।"
     ]
 
+    # 6-7 Comprehensive Pros (Strengths)
     pros = []
     if size_cr >= 500:
         pros.append(f"₹{size_cr} करोड़ का बड़ा इश्यू साइज़ होने के कारण संस्थागत निवेशकों (QIB) की सक्रिय भागीदारी और लिस्टिंग के बाद उच्च लिक्विडिटी की संभावना है।")
@@ -499,7 +495,7 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
         pros.append("स्थापित ग्राहक आधार और अनुभवी प्रमोटर व मैनेजमेंट टीम कंपनी के दीर्घकालिक संचालन को मज़बूती देती है।")
 
     if len(fin_rows) >= 2 and fin_rows[-1]["profit"] > fin_rows[0]["profit"] and fin_rows[-1]["profit"] > 0:
-        pros.append("शुद्ध मुनाफ़े (PAT) में मज़बूत सुधार देखा गया है, जो कंपनी की बेहतर परिचालन दक्षता (Operational Efficiency) को दर्शाता है।")
+        pros.append(f"शुद्ध मुनाफ़े (PAT) में मज़बूत सुधार देखा गया है, जो कंपनी की बेहतर परिचालन दक्षता (Operational Efficiency) को दर्शाता है।")
     elif pdf_info.get("debt_repayment"):
         pros.append("IPO से प्राप्त राशि का उपयोग कर्ज़ चुकाने में होने से कंपनी का ब्याज बोझ कम होगा और शुद्ध मुनाफ़ा बढ़ेगा।")
     else:
@@ -514,3 +510,447 @@ def generate_unique_analysis(ipo: dict, pdf_info: dict) -> tuple:
         pros.append(f"इश्यू का प्रबंधन {', '.join(pdf_info['lead_managers'][:2])} जैसे प्रतिष्ठित मर्चेंट बैंकर्स द्वारा किया जा रहा है।")
     else:
         pros.append("रजिस्ट्रार और मर्चेंट बैंकर्स की पारदर्शी प्रक्रिया के तहत इश्यू की वैल्यूएशन को पीयर ग्रुप के अनुरूप रखा गया है।")
+
+    if gmp > 0:
+        pros.append(f"ग्रे मार्केट में +₹{gmp} ({gain_pct}%) का सकारात्मक प्रीमियम शुरुआती लिस्टिंग गेन के संकेत दे रहा है।")
+    elif total_sub >= 1.5:
+        pros.append(f"एक्सचेंज पर {total_sub}x का स्वस्थ सब्सक्रिप्शन निवेशकों के सकारात्मक रुझान को दर्शाता है।")
+    else:
+        pros.append("रिटेल निवेशकों के लिए न्यूनतम 1 लॉट में ₹15,000 के आसपास की सुलभ निवेश सीमा उपलब्ध है।")
+
+    # 6 Comprehensive Cons (Risks)
+    cons = []
+    if pdf_info.get("is_ofs") and not pdf_info.get("has_fresh_issue"):
+        cons.append("यह इश्यू 100% Offer for Sale (OFS) है, इसलिए जुटाई गई राशि कंपनी के विकास में नहीं बल्कि विक्रय करने वाले शेयरधारकों को जाएगी।")
+    else:
+        cons.append("कच्चे माल की कीमतों और सप्लाई चेन लागत में उतार-चढ़ाव कंपनी के ऑपरेटिंग मार्जिन पर दबाव डाल सकता है।")
+
+    cons.append("उद्योग में घरेलू और अंतरराष्ट्रीय कंपनियों की बढ़ती प्रतिस्पर्धा कंपनी की प्राइसिंग पावर को सीमित कर सकती है।")
+    cons.append("कंपनी का व्यवसाय सरकारी नीतियों, नियामक बदलावों और समग्र आर्थिक चक्रों के प्रति संवेदनशील है।")
+    cons.append("कार्यशील पूंजी (Working Capital) की अधिक आवश्यकता के कारण नकदी प्रवाह (Cash Flow) में अस्थायी उतार-चढ़ाव संभव है।")
+
+    if gmp <= 0:
+        cons.append("वर्तमान में ग्रे मार्केट प्रीमियम (GMP) ₹0 होने के कारण लिस्टिंग के दिन बड़े मुनाफ़े को लेकर अनिश्चितता बनी हुई है।")
+    else:
+        cons.append("लिस्टिंग के दिन शुरुआती तेज़ी के बाद संस्थागत या HNI निवेशकों की मुनाफ़ावसूली (Profit Booking) से शेयर में अस्थिरता आ सकती है।")
+
+    if cat == "SME":
+        cons.append("SME कैटेगरी का IPO होने के कारण न्यूनतम निवेश राशि अधिक है और लिस्टिंग के बाद लो-लिक्विडिटी व सर्किट लिमिट का जोखिम रहता है।")
+    else:
+        cons.append("यदि अंतिम दिन QIB सब्सक्रिप्शन कमज़ोर रहता है या शेयर बाजार में गिरावट आती है, तो लिस्टिंग कीमत प्रभावित हो सकती है।")
+
+    return short_about, "\n\n".join(sections), " | ".join(pros), " | ".join(cons)
+
+
+def fetch_nse_ipos() -> list:
+    session = requests.Session()
+    session.headers.update(NSE_HEADERS)
+    results = []
+
+    try:
+        session.get("https://www.nseindia.com/market-data/all-upcoming-issues-ipo", timeout=15)
+        time.sleep(1.2)
+
+        endpoints = [
+            "https://www.nseindia.com/api/ipo-current-issue",
+            "https://www.nseindia.com/api/all-upcoming-issues?category=ipo",
+        ]
+
+        seen_keys = set()
+        for url in endpoints:
+            resp = session.get(url, timeout=15)
+            if resp.status_code != 200:
+                continue
+
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("data", [])
+            for item in items:
+                name = (item.get("companyName") or item.get("symbol") or "").strip()
+                symbol = (item.get("symbol") or "").strip()
+                key = normalize_company_key(name)
+                if not name or not key or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+
+                detail_data = {}
+                if symbol:
+                    try:
+                        d_resp = session.get(f"https://www.nseindia.com/api/ipo-detail?symbol={symbol}", timeout=10)
+                        if d_resp.status_code == 200:
+                            detail_data = d_resp.json() or {}
+                    except Exception:
+                        pass
+
+                merged_raw = {**item, **detail_data}
+                p_min, p_max = parse_price_band(
+                    merged_raw.get("priceBand") or merged_raw.get("issuePrice") or merged_raw.get("priceRange")
+                )
+                lot_size = int(float(str(
+                    merged_raw.get("lotSize") or merged_raw.get("marketLot") or merged_raw.get("bidLot") or 0
+                ).replace(",", "") or 0))
+
+                open_dt = parse_any_date(merged_raw.get("issueStartDate") or merged_raw.get("bidStartDate"))
+                close_dt = parse_any_date(merged_raw.get("issueEndDate") or merged_raw.get("bidEndDate"))
+                list_dt = parse_any_date(merged_raw.get("listingDate"))
+
+                qib_sub = round(float(merged_raw.get("qibSubscription") or 0), 2)
+                nii_sub = round(float(merged_raw.get("niiSubscription") or 0), 2)
+                retail_sub = round(float(merged_raw.get("retailSubscription") or 0), 2)
+                total_sub = round(float(merged_raw.get("noOfTime") or merged_raw.get("totalSubscription") or 0), 2)
+
+                issue_size_raw = str(merged_raw.get("issueSize") or "0").replace(",", "")
+                nums = re.findall(r"\d+(?:\.\d+)?", issue_size_raw)
+                issue_size_num = float(nums[0]) if nums else 0
+                if issue_size_num > 100000 and p_max > 0:
+                    issue_size_cr = round((issue_size_num * p_max) / 10000000, 2)
+                else:
+                    issue_size_cr = round(issue_size_num, 2)
+
+                drhp_link = merged_raw.get("drhpUrl") or merged_raw.get("prospectusUrl") or ""
+                rhp_link = merged_raw.get("rhpUrl") or merged_raw.get("redHerringUrl") or ""
+
+                category = classify_category(merged_raw, p_max, lot_size)
+                status = determine_status(open_dt, close_dt, list_dt)
+
+                results.append({
+                    "company_name": name,
+                    "slug": make_slug(name),
+                    "category": category,
+                    "status": status,
+                    "open_date": open_dt,
+                    "close_date": close_dt,
+                    "listing_date": list_dt,
+                    "issue_price_min": p_min,
+                    "issue_price_max": p_max,
+                    "lot_size": lot_size,
+                    "issue_size_cr": issue_size_cr,
+                    "qib_sub": qib_sub,
+                    "nii_sub": nii_sub,
+                    "retail_sub": retail_sub,
+                    "total_sub": total_sub,
+                    "drhp_url": drhp_link,
+                    "rhp_url": rhp_link,
+                })
+    except Exception as e:
+        print(f"NSE Fetch Error: {e}")
+
+    return results
+
+
+def fetch_bse_ipos() -> list:
+    results = []
+    bse_urls = [
+        "https://api.bseindia.com/BseIndiaAPI/api/GetPublicIssueData/w?Type=P&Status=L",
+        "https://api.bseindia.com/BseIndiaAPI/api/GetPublicIssueData/w?Type=P&Status=F",
+    ]
+
+    seen_keys = set()
+    for url in bse_urls:
+        try:
+            resp = requests.get(url, headers=BSE_HEADERS, timeout=15)
+            if resp.status_code != 200:
+                continue
+
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("Table", []) or data.get("data", [])
+            for item in items:
+                name = (item.get("Scrip_Name") or item.get("Company_Name") or item.get("Issuer_Name") or "").strip()
+                key = normalize_company_key(name)
+                if not name or not key or key in seen_keys:
+                    continue
+                seen_keys.add(key)
+
+                p_min, p_max = parse_price_band(
+                    item.get("Offer_Price") or item.get("Price_Band") or item.get("Issue_Price")
+                )
+                lot_size = int(float(str(
+                    item.get("Market_Lot") or item.get("Lot_Size") or item.get("Bid_Lot") or 0
+                ).replace(",", "") or 0))
+
+                open_dt = parse_any_date(item.get("Start_Dt") or item.get("Open_Date") or item.get("Issue_Open_Date"))
+                close_dt = parse_any_date(item.get("End_Dt") or item.get("Close_Date") or item.get("Issue_Close_Date"))
+                list_dt = parse_any_date(item.get("Listing_Date"))
+
+                total_sub = round(float(str(item.get("No_of_Times") or item.get("Total_Sub") or 0).replace(",", "") or 0), 2)
+                issue_size_raw = str(item.get("Issue_Size") or item.get("Total_Issue_Size") or "0").replace(",", "")
+                nums = re.findall(r"\d+(?:\.\d+)?", issue_size_raw)
+                issue_size_num = float(nums[0]) if nums else 0
+                if issue_size_num > 100000 and p_max > 0:
+                    issue_size_cr = round((issue_size_num * p_max) / 10000000, 2)
+                else:
+                    issue_size_cr = round(issue_size_num, 2)
+
+                pdf_doc = item.get("Prospectus_File") or item.get("DRHP_Link") or ""
+                if pdf_doc and not pdf_doc.startswith("http"):
+                    pdf_doc = f"https://www.bseindia.com/corporates/download/{pdf_doc}"
+
+                category = classify_category(item, p_max, lot_size)
+                status = determine_status(open_dt, close_dt, list_dt)
+
+                results.append({
+                    "company_name": name,
+                    "slug": make_slug(name),
+                    "category": category,
+                    "status": status,
+                    "open_date": open_dt,
+                    "close_date": close_dt,
+                    "listing_date": list_dt,
+                    "issue_price_min": p_min,
+                    "issue_price_max": p_max,
+                    "lot_size": lot_size,
+                    "issue_size_cr": issue_size_cr,
+                    "qib_sub": 0.0,
+                    "nii_sub": 0.0,
+                    "retail_sub": 0.0,
+                    "total_sub": total_sub,
+                    "drhp_url": pdf_doc,
+                    "rhp_url": pdf_doc,
+                })
+        except Exception as e:
+            print(f"BSE Fetch Warning ({url}): {e}")
+
+    return results
+
+
+def fetch_sebi_drhp_links() -> dict:
+    pdf_map = {}
+    try:
+        sebi_url = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10"
+        resp = requests.get(sebi_url, headers=NSE_HEADERS, timeout=15)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for a in soup.find_all("a", href=True):
+                title = a.get_text(" ", strip=True)
+                href = a["href"]
+                if title and len(title) > 5:
+                    key = normalize_company_key(title)
+                    if key:
+                        full_link = href if href.startswith("http") else f"https://www.sebi.gov.in{href}"
+                        pdf_map[key] = full_link
+    except Exception as e:
+        print(f"SEBI DRHP fetch warning: {e}")
+    return pdf_map
+
+
+def merge_nse_and_bse(nse_list: list, bse_list: list) -> list:
+    merged_map = {}
+    for item in nse_list:
+        merged_map[normalize_company_key(item["company_name"])] = item
+
+    for bse_item in bse_list:
+        key = normalize_company_key(bse_item["company_name"])
+        if key not in merged_map:
+            merged_map[key] = bse_item
+        else:
+            ex = merged_map[key]
+            if ex["issue_price_max"] == 0 and bse_item["issue_price_max"] > 0:
+                ex["issue_price_min"], ex["issue_price_max"] = bse_item["issue_price_min"], bse_item["issue_price_max"]
+            if ex["lot_size"] == 0 and bse_item["lot_size"] > 0:
+                ex["lot_size"] = bse_item["lot_size"]
+            if ex["issue_size_cr"] == 0 and bse_item["issue_size_cr"] > 0:
+                ex["issue_size_cr"] = bse_item["issue_size_cr"]
+            if not ex["open_date"] and bse_item["open_date"]:
+                ex["open_date"] = bse_item["open_date"]
+            if not ex["close_date"] and bse_item["close_date"]:
+                ex["close_date"] = bse_item["close_date"]
+            if not ex["listing_date"] and bse_item["listing_date"]:
+                ex["listing_date"] = bse_item["listing_date"]
+            if not ex["drhp_url"] and bse_item["drhp_url"]:
+                ex["drhp_url"] = bse_item["drhp_url"]
+            if not ex["rhp_url"] and bse_item["rhp_url"]:
+                ex["rhp_url"] = bse_item["rhp_url"]
+            if bse_item["category"] == "SME":
+                ex["category"] = "SME"
+
+    return [ipo for ipo in merged_map.values() if is_valid_active_ipo(ipo)]
+
+
+def fetch_investorgain_data() -> dict:
+    ig_map = {}
+    urls = [
+        "https://webnodejs.investorgain.com/cloud/report/data-read/331/1/11/2026/2026-27/0/all",
+        "https://www.investorgain.com/report/live-ipo-gmp/331/",
+    ]
+
+    for url in urls:
+        try:
+            resp = requests.get(url, headers=IG_HEADERS, timeout=15)
+            if resp.status_code != 200:
+                continue
+
+            if "application/json" in resp.headers.get("Content-Type", ""):
+                payload = resp.json()
+                for r in payload.get("reportTableData", []):
+                    raw_name = BeautifulSoup(str(r.get("Name") or r.get("IPO") or ""), "html.parser").get_text(" ", strip=True)
+                    raw_gmp = BeautifulSoup(str(r.get("GMP") or "0"), "html.parser").get_text(" ", strip=True)
+                    nums = re.findall(r"-?\d+(?:\.\d+)?", raw_gmp.replace(",", ""))
+                    if raw_name and nums:
+                        ig_map[normalize_company_key(raw_name)] = {
+                            "gmp": float(nums[0]),
+                            "open_date": parse_any_date(r.get("Open") or r.get("Start Date")),
+                            "close_date": parse_any_date(r.get("Close") or r.get("End Date")),
+                            "allotment_date": parse_any_date(r.get("BoA Dt") or r.get("Allotment") or r.get("Allotment Date")),
+                            "listing_date": parse_any_date(r.get("Listing") or r.get("Listing Date")),
+                        }
+                if ig_map:
+                    break
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            table = soup.find("table")
+            if table:
+                for tr in table.find_all("tr")[1:]:
+                    cols = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
+                    if len(cols) >= 3:
+                        nums = re.findall(r"-?\d+(?:\.\d+)?", cols[2].replace(",", ""))
+                        if cols[0] and nums:
+                            ig_map[normalize_company_key(cols[0])] = {
+                                "gmp": float(nums[0]),
+                                "open_date": parse_any_date(cols[6]) if len(cols) > 6 else None,
+                                "close_date": parse_any_date(cols[7]) if len(cols) > 7 else None,
+                                "allotment_date": parse_any_date(cols[8]) if len(cols) > 8 else None,
+                                "listing_date": parse_any_date(cols[9]) if len(cols) > 9 else None,
+                            }
+                if ig_map:
+                    break
+        except Exception as e:
+            print(f"InvestorGain warning ({url}): {e}")
+
+    return ig_map
+
+
+def fill_missing_dates(ipo_dict: dict, ig_info: dict = None):
+    if ig_info:
+        if not ipo_dict.get("open_date") and ig_info.get("open_date"):
+            ipo_dict["open_date"] = ig_info["open_date"]
+        if not ipo_dict.get("close_date") and ig_info.get("close_date"):
+            ipo_dict["close_date"] = ig_info["close_date"]
+        if not ipo_dict.get("allotment_date") and ig_info.get("allotment_date"):
+            ipo_dict["allotment_date"] = ig_info["allotment_date"]
+        if not ipo_dict.get("listing_date") and ig_info.get("listing_date"):
+            ipo_dict["listing_date"] = ig_info["listing_date"]
+
+    if ipo_dict.get("close_date"):
+        if not ipo_dict.get("allotment_date"):
+            ipo_dict["allotment_date"] = add_business_days(ipo_dict["close_date"], 1)
+        if not ipo_dict.get("listing_date"):
+            ipo_dict["listing_date"] = add_business_days(ipo_dict["close_date"], 3)
+
+
+def sync_all():
+    nse_ipos = fetch_nse_ipos()
+    bse_ipos = fetch_bse_ipos()
+    combined_ipos = merge_nse_and_bse(nse_ipos, bse_ipos)
+    ig_map = fetch_investorgain_data()
+    sebi_pdfs = fetch_sebi_drhp_links()
+
+    existing_res = supabase.table("ipos").select("*").execute()
+    existing_by_slug = {row["slug"]: row for row in (existing_res.data or [])}
+    existing_by_key = {normalize_company_key(row["company_name"]): row for row in (existing_res.data or [])}
+
+    updated_count = 0
+
+    for ipo in combined_ipos:
+        key = normalize_company_key(ipo["company_name"])
+        ig_info = ig_map.get(key)
+        if not ig_info:
+            for g_key, g_val in ig_map.items():
+                if len(key) >= 6 and (key in g_key or g_key in key):
+                    ig_info = g_val
+                    break
+
+        old_row = existing_by_slug.get(ipo["slug"]) or existing_by_key.get(key)
+        if old_row:
+            ipo["slug"] = old_row["slug"]
+            if ipo["lot_size"] == 0 and old_row.get("lot_size"):
+                ipo["lot_size"] = old_row["lot_size"]
+            if ipo["issue_size_cr"] == 0 and old_row.get("issue_size_cr"):
+                ipo["issue_size_cr"] = old_row["issue_size_cr"]
+            if ipo["issue_price_max"] == 0 and old_row.get("issue_price_max"):
+                ipo["issue_price_min"] = old_row.get("issue_price_min") or 0
+                ipo["issue_price_max"] = old_row.get("issue_price_max") or 0
+            if not ipo.get("allotment_date") and old_row.get("allotment_date"):
+                ipo["allotment_date"] = old_row["allotment_date"]
+            if not ipo.get("listing_date") and old_row.get("listing_date"):
+                ipo["listing_date"] = old_row["listing_date"]
+            if not ipo["drhp_url"] and old_row.get("drhp_url"):
+                ipo["drhp_url"] = old_row["drhp_url"]
+            if not ipo["rhp_url"] and old_row.get("rhp_url"):
+                ipo["rhp_url"] = old_row["rhp_url"]
+
+        if not ipo["drhp_url"]:
+            for s_key, s_url in sebi_pdfs.items():
+                if len(key) >= 6 and (key in s_key or s_key in key):
+                    ipo["drhp_url"] = s_url
+                    break
+
+        target_pdf = ipo.get("rhp_url") or ipo.get("drhp_url") or ""
+        pdf_insights = extract_pdf_insights(target_pdf)
+
+        if pdf_insights.get("allotment_date"):
+            ipo["allotment_date"] = pdf_insights["allotment_date"]
+        if pdf_insights.get("listing_date"):
+            ipo["listing_date"] = pdf_insights["listing_date"]
+
+        matched_gmp = ig_info["gmp"] if ig_info else (float(old_row.get("gmp_price") or 0) if old_row else 0)
+        ipo["gmp_price"] = matched_gmp
+        fill_missing_dates(ipo, ig_info)
+        ipo["status"] = determine_status(ipo.get("open_date"), ipo.get("close_date"), ipo.get("listing_date"))
+
+        short_about, blog_txt, pros_txt, cons_txt = generate_unique_analysis(ipo, pdf_insights)
+
+        ipo["logo_url"] = (old_row.get("logo_url") if old_row and old_row.get("logo_url") else "") or fetch_company_logo(ipo["company_name"], pdf_insights.get("website", ""))
+        ipo["company_about"] = short_about
+        ipo["ai_blog_hindi"] = blog_txt
+        ipo["pros_list"] = pros_txt
+        ipo["cons_list"] = cons_txt
+        ipo["financials_json"] = pdf_insights.get("financials") or (old_row.get("financials_json") if old_row else {})
+        ipo["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        supabase.table("ipos").upsert(ipo, on_conflict="slug").execute()
+        updated_count += 1
+
+    for row in (existing_res.data or []):
+        key = normalize_company_key(row["company_name"])
+        ig_info = ig_map.get(key)
+        if not ig_info:
+            for g_key, g_val in ig_map.items():
+                if len(key) >= 6 and (key in g_key or g_key in key):
+                    ig_info = g_val
+                    break
+
+        target_pdf = row.get("rhp_url") or row.get("drhp_url") or ""
+        pdf_insights = extract_pdf_insights(target_pdf)
+
+        if pdf_insights.get("allotment_date"):
+            row["allotment_date"] = pdf_insights["allotment_date"]
+        if pdf_insights.get("listing_date"):
+            row["listing_date"] = pdf_insights["listing_date"]
+        if ig_info:
+            row["gmp_price"] = ig_info["gmp"]
+        fill_missing_dates(row, ig_info)
+
+        short_about, blog_txt, pros_txt, cons_txt = generate_unique_analysis(row, pdf_insights)
+
+        patch = {
+            "gmp_price": row.get("gmp_price") or 0,
+            "open_date": row.get("open_date"),
+            "close_date": row.get("close_date"),
+            "allotment_date": row.get("allotment_date"),
+            "listing_date": row.get("listing_date"),
+            "logo_url": row.get("logo_url") or fetch_company_logo(row["company_name"], pdf_insights.get("website", "")),
+            "company_about": short_about,
+            "ai_blog_hindi": blog_txt,
+            "pros_list": pros_txt,
+            "cons_list": cons_txt,
+            "financials_json": pdf_insights.get("financials") or row.get("financials_json") or {},
+            "status": determine_status(row.get("open_date"), row.get("close_date"), row.get("listing_date")),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        supabase.table("ipos").update(patch).eq("id", row["id"]).execute()
+        updated_count += 1
+
+    print(f"Sync + 3Yr Financials + 6-7 Pros/Cons Complete! Updated: {updated_count}")
+
+
+if __name__ == "__main__":
+    sync_all()
