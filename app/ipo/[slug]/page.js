@@ -587,7 +587,7 @@ export default async function IPODetailPage({ params, searchParams }) {
         </div>
       </section>
 
-      {/* BOX 5 & BOX 6: DETAILS BLOG + COMPANY FINANCIALS (OR SELECTED QUERY TAB VIEW) */}
+      {/* BOX 5 & BOX 6: TAB VIEW + ARTICLE (HALF SHOWN WITH READ MORE) + COMPANY FINANCIALS */}
       <IpoTabsClient
         ipo={ipo}
         gmpHistory={gmpHistory}
