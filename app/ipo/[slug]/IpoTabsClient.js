@@ -1,7 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-
 function formatShortDate(dateStr) {
   if (!dateStr) return 'Announced Soon';
   const d = new Date(`${dateStr}T00:00:00`);
@@ -176,52 +174,44 @@ export function triggerDirectPdfDownload(ipo) {
 export default function IpoTabsClient({
   ipo,
   gmpHistory = [],
-  externalTab = null,
-  onClearExternalTab = null,
+  activeTabParam = null,
+  basePath = '',
 }) {
-  const [activeTab, setActiveTab] = useState(externalTab || 'details');
-
-  useEffect(() => {
-    if (externalTab) {
-      setActiveTab(externalTab);
-    }
-  }, [externalTab]);
-
   const lowerPrice = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
   const upperPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
   const lotSize = Number(ipo.lot_size) || 0;
   const gmp = Number(ipo.gmp_price) || 0;
-  const pdfUrl = ipo.rhp_url || ipo.drhp_url || '';
+  const estListing = upperPrice + gmp;
+  const estGainPct = upperPrice > 0 ? ((gmp / upperPrice) * 100).toFixed(2) : '0.00';
+  const estLotProfit = lotSize > 0 ? gmp * lotSize : 0;
+
+  const qibSub = Number(ipo.qib_sub || 0).toFixed(2);
+  const niiSub = Number(ipo.nii_sub || 0).toFixed(2);
+  const retailSub = Number(ipo.retail_sub || 0).toFixed(2);
+  const totalSub = Number(ipo.total_sub || 0).toFixed(2);
 
   const aiBlogParagraphs = ipo.ai_blog_hindi
     ? ipo.ai_blog_hindi.split(/\n\n+/).filter((p) => p.trim().length > 0)
     : [];
 
-  const handleSelectTab = (tabId) => {
-    setActiveTab(tabId);
-    if (onClearExternalTab && tabId === 'details') {
-      onClearExternalTab();
-    }
-  };
-
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {activeTab !== 'details' && (
+      {activeTabParam && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 bg-teal-50/70 border-b border-teal-200">
           <span className="text-xs sm:text-sm font-bold text-teal-900 uppercase tracking-wide">
-            Active View: {activeTab}
+            Section View: {activeTabParam}
           </span>
-          <button
-            onClick={() => handleSelectTab('details')}
-            className="text-xs font-bold bg-white text-teal-800 border border-teal-300 px-3 py-1 rounded-lg hover:bg-teal-100 cursor-pointer"
+          <a
+            href={basePath || `/ipo/${ipo.slug}`}
+            className="text-xs font-bold bg-white text-teal-800 border border-teal-300 px-3 py-1 rounded-lg hover:bg-teal-100"
           >
-            ← Back to Full IPO Details &amp; Financials
-          </button>
+            ← Back to Full IPO Details
+          </a>
         </div>
       )}
 
       <div className="p-5 sm:p-6">
-        {activeTab === 'details' && (
+        {!activeTabParam && (
           <div className="space-y-8">
             <article className="space-y-4 text-sm sm:text-[15px] leading-7 text-slate-800">
               <h2 className="text-base sm:text-xl font-extrabold text-slate-900 border-b border-slate-200 pb-3">
@@ -256,15 +246,28 @@ export default function IpoTabsClient({
           </div>
         )}
 
-        {activeTab === 'gmp' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-slate-900">
-              {ipo.company_name} IPO GMP
-            </h2>
-            <p className="text-sm text-slate-600">
-              Upper price band ₹{upperPrice} के आधार पर लाइव GMP <strong>₹{gmp}</strong> और अनुमानित लिस्टिंग कीमत{' '}
-              <strong>₹{upperPrice + gmp}</strong> है।
-            </p>
+        {activeTabParam === 'gmp' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">
+                {ipo.company_name} IPO GMP Summary &amp; History
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                ग्रे मार्केट प्रीमियम (GMP) अनौपचारिक बाजार का एक शुरुआती संकेत मात्र है।
+              </p>
+            </div>
+
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-4 space-y-2 text-xs sm:text-sm text-slate-800">
+              <p className="font-bold text-emerald-950">GMP Summary:</p>
+              <p>
+                <strong>{ipo.company_name}</strong> ({ipo.category || 'Mainboard'}) का ऊपरी इश्यू प्राइस{' '}
+                <strong>₹{upperPrice}</strong> है। वर्तमान GMP <strong>₹{gmp}</strong> के आधार पर अनुमानित लिस्टिंग
+                कीमत <strong>₹{estListing}</strong> (लगभग <strong>{estGainPct}%</strong>) बनती है, और 1 लॉट (
+                {lotSize > 0 ? `${lotSize} shares` : 'TBA'}) पर संभावित अंतर{' '}
+                <strong>₹{estLotProfit.toLocaleString('en-IN')}</strong> है।
+              </p>
+            </div>
+
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-sm text-left border-collapse">
                 <thead>
@@ -300,23 +303,48 @@ export default function IpoTabsClient({
                       <td className="py-2.5 px-4 font-medium">Live</td>
                       <td className="py-2.5 px-4">₹{upperPrice}</td>
                       <td className="py-2.5 px-4 font-bold text-emerald-700">₹{gmp}</td>
-                      <td className="py-2.5 px-4">₹{upperPrice + gmp}</td>
+                      <td className="py-2.5 px-4">₹{estListing}</td>
                       <td className="py-2.5 px-4 font-semibold">
-                        {lotSize > 0 ? `₹${(gmp * lotSize).toLocaleString('en-IN')}` : '—'}
+                        {lotSize > 0 ? `₹${estLotProfit.toLocaleString('en-IN')}` : '—'}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-1">
+              <p className="font-bold text-slate-800">Dhyan Rakhne Wali Baat:</p>
+              <p>
+                लिस्टिंग के दिन वास्तविक शेयर मूल्य एक्सचेंज की मांग, कुल सब्सक्रिप्शन और बाजार के रुझान पर निर्भर
+                करता है। GMP को निवेश का एकमात्र आधार न मानें।
+              </p>
+            </div>
           </div>
         )}
 
-        {activeTab === 'subscription' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-slate-900">
-              {ipo.company_name} IPO Live Subscription
-            </h2>
+        {activeTabParam === 'subscription' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">
+                {ipo.company_name} IPO Subscription Summary
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                विभिन्न निवेशक श्रेणियों में प्राप्त बोलियों (Bids) का संक्षिप्त विवरण।
+              </p>
+            </div>
+
+            <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 space-y-2 text-xs sm:text-sm text-slate-800">
+              <p className="font-bold text-blue-950">Subscription Overview:</p>
+              <p>
+                <strong>{ipo.company_name}</strong> IPO का कुल सब्सक्रिप्शन <strong>{totalSub}x</strong> दर्ज किया गया
+                है। इसमें QIB <strong>{qibSub}x</strong>, NII/HNI <strong>{niiSub}x</strong>, और Retail{' '}
+                <strong>{retailSub}x</strong> स्तर पर है। इश्यू अवधि{' '}
+                <strong>{formatShortDate(ipo.open_date)}</strong> से{' '}
+                <strong>{formatShortDate(ipo.close_date)}</strong> तक निर्धारित है।
+              </p>
+            </div>
+
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-sm text-left border-collapse">
                 <thead>
@@ -328,98 +356,71 @@ export default function IpoTabsClient({
                 <tbody className="divide-y divide-slate-200">
                   <tr>
                     <td className="py-2.5 px-4 font-medium">QIB</td>
-                    <td className="py-2.5 px-4 text-right font-semibold">
-                      {Number(ipo.qib_sub || 0).toFixed(2)}x
-                    </td>
+                    <td className="py-2.5 px-4 text-right font-semibold">{qibSub}x</td>
                   </tr>
                   <tr className="bg-slate-50/70">
                     <td className="py-2.5 px-4 font-medium">NII / HNI</td>
-                    <td className="py-2.5 px-4 text-right font-semibold">
-                      {Number(ipo.nii_sub || 0).toFixed(2)}x
-                    </td>
+                    <td className="py-2.5 px-4 text-right font-semibold">{niiSub}x</td>
                   </tr>
                   <tr>
                     <td className="py-2.5 px-4 font-medium">Retail</td>
-                    <td className="py-2.5 px-4 text-right font-semibold">
-                      {Number(ipo.retail_sub || 0).toFixed(2)}x
-                    </td>
+                    <td className="py-2.5 px-4 text-right font-semibold">{retailSub}x</td>
                   </tr>
                   <tr className="bg-emerald-50 font-bold text-emerald-900">
                     <td className="py-2.5 px-4">Total Subscription</td>
-                    <td className="py-2.5 px-4 text-right">{Number(ipo.total_sub || 0).toFixed(2)}x</td>
+                    <td className="py-2.5 px-4 text-right">{totalSub}x</td>
                   </tr>
                 </tbody>
               </table>
             </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-1">
+              <p className="font-bold text-slate-800">Category Note:</p>
+              <p>
+                आमतौर पर आखिरी दिन के अंतिम घंटों में QIB और NII वर्ग की बोलियां तेजी से अपडेट होती हैं, इसलिए
+                आंकड़ों को समय-समय पर रीफ़्रेश करके देखें।
+              </p>
+            </div>
           </div>
         )}
 
-        {activeTab === 'drhp' && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  {ipo.company_name} DRHP / RHP PDF
-                </h2>
-                <p className="text-xs sm:text-sm text-slate-600">
-                  आधिकारिक ऑफर दस्तावेज़ डाउनलोड करें या नीचे पढ़ें।
-                </p>
-              </div>
-              <button
-                onClick={() => triggerDirectPdfDownload(ipo)}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 cursor-pointer"
-              >
-                Download PDF ⬇
-              </button>
+        {activeTabParam === 'allotment' && (
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">
+                {ipo.company_name} IPO Allotment Status Summary
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                अलॉटमेंट अंतिम रूप से जारी होने के बाद आप रजिस्ट्रार या एक्सचेंज पोर्टल पर स्थिति जांच सकते हैं।
+              </p>
             </div>
 
-            {pdfUrl ? (
-              <div className="w-full h-[600px] border border-slate-300 rounded-xl overflow-hidden bg-slate-100">
-                <iframe
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(pdfUrl)}&embedded=true`}
-                  title={`${ipo.company_name} DRHP/RHP Document`}
-                  className="w-full h-full border-0"
-                />
-              </div>
-            ) : (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
-                <p className="text-sm text-slate-700">
-                  सीधा PDF लिंक उपलब्ध होते ही यहाँ दिखेगा। आप SEBI या NSE पोर्टल से भी दस्तावेज़ देख सकते हैं:
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <a
-                    href="https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-slate-900 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-slate-800"
-                  >
-                    SEBI Filings
-                  </a>
-                  <a
-                    href="https://www.nseindia.com/market-data/all-upcoming-issues-ipo"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-teal-700 text-white text-xs sm:text-sm font-semibold rounded-lg hover:bg-teal-800"
-                  >
-                    NSE IPO Documents
-                  </a>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-2 text-xs sm:text-sm text-slate-800">
+              <p className="font-bold text-amber-950">Allotment Timeline Summary:</p>
+              <p>
+                <strong>{ipo.company_name}</strong> IPO का इश्यू <strong>{formatShortDate(ipo.close_date)}</strong>{' '}
+                को बंद हुआ/होगा, अलॉटमेंट की संभावित तिथि <strong>{formatShortDate(ipo.allotment_date)}</strong> है,
+                और लिस्टिंग <strong>{formatShortDate(ipo.listing_date)}</strong> को प्रस्तावित है।
+              </p>
+            </div>
 
-        {activeTab === 'allotment' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-slate-900">
-              {ipo.company_name} IPO Allotment Status
-            </h2>
-            <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-700">
-              <li>आधिकारिक रजिस्ट्रार की वेबसाइट खोलें।</li>
-              <li>सूची से <strong>{ipo.company_name}</strong> चुनें।</li>
-              <li>PAN Number, Application Number या DP/Client ID दर्ज करें।</li>
-              <li>Submit करके अपना अलॉटमेंट स्टेटस देखें।</li>
-            </ol>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+              <h3 className="text-sm font-bold text-slate-900">Status Check Karne Ke Kadam:</h3>
+              <ol className="list-decimal pl-5 space-y-2 text-xs sm:text-sm text-slate-700">
+                <li>इश्यू के आधिकारिक रजिस्ट्रार (जैसे Link Intime / KFinTech / Bigshare) की वेबसाइट पर जाएं।</li>
+                <li>कंपनी सूची से <strong>{ipo.company_name}</strong> का चयन करें।</li>
+                <li>अपना <strong>PAN Number</strong>, Application Number या DP/Client ID दर्ज करें।</li>
+                <li>कैप्चा/विवरण भरकर Submit करें और शेयर आवंटन की स्थिति देखें।</li>
+              </ol>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 space-y-1">
+              <p className="font-bold text-slate-800">Refund &amp; Demat Credit:</p>
+              <p>
+                जिन आवेदकों को शेयर आवंटित नहीं होते, उनके ASBA/UPI खाते में राशि अनब्लॉक/रिफंड की प्रक्रिया शुरू
+                की जाती है, और सफल आवेदकों के डीमैट खाते में शेयर लिस्टिंग से पहले क्रेडिट किए जाते हैं।
+              </p>
+            </div>
           </div>
         )}
       </div>
