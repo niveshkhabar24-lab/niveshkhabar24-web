@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 function formatShortDate(dateStr) {
   if (!dateStr) return 'Announced Soon';
@@ -155,49 +155,72 @@ function FinancialsBox({ companyName, financials }) {
   );
 }
 
-export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
-  const [activeTab, setActiveTab] = useState('details');
+export function triggerDirectPdfDownload(ipo) {
+  const pdfUrl = ipo.rhp_url || ipo.drhp_url || '';
+  const fallbackDocUrl =
+    pdfUrl ||
+    'https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=3&ssid=15&smid=10';
+
+  const link = document.createElement('a');
+  link.href = fallbackDocUrl;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  if (pdfUrl) {
+    link.setAttribute('download', `${ipo.slug || 'ipo'}-drhp-rhp.pdf`);
+  }
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+export default function IpoTabsClient({
+  ipo,
+  gmpHistory = [],
+  externalTab = null,
+  onClearExternalTab = null,
+}) {
+  const [activeTab, setActiveTab] = useState(externalTab || 'details');
+
+  useEffect(() => {
+    if (externalTab) {
+      setActiveTab(externalTab);
+    }
+  }, [externalTab]);
 
   const lowerPrice = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
   const upperPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
   const lotSize = Number(ipo.lot_size) || 0;
   const gmp = Number(ipo.gmp_price) || 0;
-
   const pdfUrl = ipo.rhp_url || ipo.drhp_url || '';
-  const hasDirectPdf = Boolean(pdfUrl);
 
   const aiBlogParagraphs = ipo.ai_blog_hindi
     ? ipo.ai_blog_hindi.split(/\n\n+/).filter((p) => p.trim().length > 0)
     : [];
 
-  const tabs = [
-    { id: 'details', label: 'IPO Details & Financials' },
-    { id: 'gmp', label: 'GMP' },
-    { id: 'drhp', label: 'DRHP / RHP' },
-    { id: 'allotment', label: 'Allotment Status' },
-  ];
+  const handleSelectTab = (tabId) => {
+    setActiveTab(tabId);
+    if (onClearExternalTab && tabId === 'details') {
+      onClearExternalTab();
+    }
+  };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      {/* Tabs (Dedicated GMP tab + non-duplicated sections) */}
-      <div className="flex flex-wrap gap-2 p-4 bg-slate-50 border-b border-slate-200">
-        {tabs.map((tab) => (
+      {activeTab !== 'details' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 bg-teal-50/70 border-b border-teal-200">
+          <span className="text-xs sm:text-sm font-bold text-teal-900 uppercase tracking-wide">
+            Active View: {activeTab}
+          </span>
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
-              activeTab === tab.id
-                ? 'bg-teal-700 text-white shadow-sm'
-                : 'bg-white text-slate-700 border border-slate-200 hover:bg-teal-50 hover:text-teal-800'
-            }`}
+            onClick={() => handleSelectTab('details')}
+            className="text-xs font-bold bg-white text-teal-800 border border-teal-300 px-3 py-1 rounded-lg hover:bg-teal-100 cursor-pointer"
           >
-            {tab.label}
+            ← Back to Full IPO Details &amp; Financials
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
       <div className="p-5 sm:p-6">
-        {/* DETAILS BLOG -> COMPANY FINANCIALS */}
         {activeTab === 'details' && (
           <div className="space-y-8">
             <article className="space-y-4 text-sm sm:text-[15px] leading-7 text-slate-800">
@@ -233,7 +256,6 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* DEDICATED GMP TAB */}
         {activeTab === 'gmp' && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
@@ -290,32 +312,68 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* DRHP / RHP */}
+        {activeTab === 'subscription' && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              {ipo.company_name} IPO Live Subscription
+            </h2>
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                    <th className="py-2.5 px-4 font-bold">Investor Category</th>
+                    <th className="py-2.5 px-4 font-bold text-right">Subscription</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  <tr>
+                    <td className="py-2.5 px-4 font-medium">QIB</td>
+                    <td className="py-2.5 px-4 text-right font-semibold">
+                      {Number(ipo.qib_sub || 0).toFixed(2)}x
+                    </td>
+                  </tr>
+                  <tr className="bg-slate-50/70">
+                    <td className="py-2.5 px-4 font-medium">NII / HNI</td>
+                    <td className="py-2.5 px-4 text-right font-semibold">
+                      {Number(ipo.nii_sub || 0).toFixed(2)}x
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-medium">Retail</td>
+                    <td className="py-2.5 px-4 text-right font-semibold">
+                      {Number(ipo.retail_sub || 0).toFixed(2)}x
+                    </td>
+                  </tr>
+                  <tr className="bg-emerald-50 font-bold text-emerald-900">
+                    <td className="py-2.5 px-4">Total Subscription</td>
+                    <td className="py-2.5 px-4 text-right">{Number(ipo.total_sub || 0).toFixed(2)}x</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'drhp' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-900">
-                  {ipo.company_name} DRHP / RHP Document
+                  {ipo.company_name} DRHP / RHP PDF
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600">
-                  आधिकारिक ऑफर दस्तावेज़ पढ़ें या डाउनलोड करें।
+                  आधिकारिक ऑफर दस्तावेज़ डाउनलोड करें या नीचे पढ़ें।
                 </p>
               </div>
-              {hasDirectPdf && (
-                <a
-                  href={pdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0"
-                >
-                  Download PDF
-                </a>
-              )}
+              <button
+                onClick={() => triggerDirectPdfDownload(ipo)}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-xs sm:text-sm font-bold rounded-lg shadow-sm shrink-0 cursor-pointer"
+              >
+                Download PDF ⬇
+              </button>
             </div>
 
-            {hasDirectPdf ? (
+            {pdfUrl ? (
               <div className="w-full h-[600px] border border-slate-300 rounded-xl overflow-hidden bg-slate-100">
                 <iframe
                   src={`https://docs.google.com/gview?url=${encodeURIComponent(pdfUrl)}&embedded=true`}
@@ -351,14 +409,13 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
           </div>
         )}
 
-        {/* ALLOTMENT STATUS */}
         {activeTab === 'allotment' && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
               {ipo.company_name} IPO Allotment Status
             </h2>
             <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-700">
-              <li>आधिकारिक रजिस्ट्रार (Link Intime / KFinTech / Bigshare) की वेबसाइट खोलें।</li>
+              <li>आधिकारिक रजिस्ट्रार की वेबसाइट खोलें।</li>
               <li>सूची से <strong>{ipo.company_name}</strong> चुनें।</li>
               <li>PAN Number, Application Number या DP/Client ID दर्ज करें।</li>
               <li>Submit करके अपना अलॉटमेंट स्टेटस देखें।</li>
