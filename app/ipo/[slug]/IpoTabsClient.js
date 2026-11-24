@@ -18,11 +18,11 @@ function FinancialsChartSection({ companyName, financials }) {
     return (
       <section className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2">
         <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
-          📊 {companyName} — 3-Year Financial Performance (Revenue &amp; Profit)
+          📊 {companyName} — Financial Performance (Revenue &amp; Profit)
         </h3>
         <p className="text-xs sm:text-sm text-slate-600">
-          इस कंपनी के पिछले 3 वित्तीय वर्षों के ऑडिटेड राजस्व (Revenue) और शुद्ध मुनाफ़े (PAT) के आंकड़े RHP फाइलिंग
-          से अपडेट किए जा रहे हैं।
+          इस कंपनी के वित्तीय वर्षों के राजस्व (Revenue) और शुद्ध मुनाफ़े (PAT) के आंकड़े RHP/DRHP फाइलिंग से
+          अपडेट किए जा रहे हैं।
         </p>
       </section>
     );
@@ -35,7 +35,7 @@ function FinancialsChartSection({ companyName, financials }) {
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
         <div>
           <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
-            📊 {companyName} — 3-Year Revenue &amp; Profit Chart ({unit})
+            📊 {companyName} — Revenue &amp; Profit ({unit})
           </h3>
           <p className="text-xs text-slate-500">
             RHP / DRHP ऑफर दस्तावेज़ के अनुसार कंपनी की वित्तीय प्रगति
@@ -52,7 +52,11 @@ function FinancialsChartSection({ companyName, financials }) {
       </div>
 
       {/* Visual Bar Chart */}
-      <div className="grid grid-cols-3 gap-4 sm:gap-8 pt-4 pb-2 px-2 sm:px-6 bg-slate-50/70 rounded-xl border border-slate-100">
+      <div
+        className={`grid gap-4 sm:gap-8 pt-4 pb-2 px-2 sm:px-6 bg-slate-50/70 rounded-xl border border-slate-100 ${
+          rows.length === 2 ? 'grid-cols-2' : rows.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+        }`}
+      >
         {rows.map((item, idx) => {
           const rev = Number(item.revenue) || 0;
           const pat = Number(item.profit) || 0;
@@ -108,6 +112,16 @@ function FinancialsChartSection({ companyName, financials }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
+            {rows.some((r) => r.assets != null && Number(r.assets) > 0) && (
+              <tr>
+                <td className="py-2.5 px-4 font-semibold text-slate-700">Assets</td>
+                {rows.map((r, i) => (
+                  <td key={i} className="py-2.5 px-4 text-right text-slate-800">
+                    {Number(r.assets || 0) > 0 ? Number(r.assets).toLocaleString('en-IN') : '—'}
+                  </td>
+                ))}
+              </tr>
+            )}
             <tr>
               <td className="py-2.5 px-4 font-semibold text-slate-700">Total Revenue / Income</td>
               {rows.map((r, i) => (
@@ -186,17 +200,121 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
       ];
 
   const tabs = [
-    { id: 'overview', label: '1. Overview & Hindi Blog' },
-    { id: 'gmp', label: '2. Live GMP History' },
-    { id: 'subscription', label: '3. Live Subscription' },
+    { id: 'overview', label: '1. Overview & Complete Flow' },
+    { id: 'subscription', label: '2. Live Subscription' },
+    { id: 'gmp', label: '3. Live GMP History' },
     { id: 'drhp', label: '4. DRHP / RHP PDF' },
     { id: 'review', label: '5. Review (Apply/Avoid)' },
     { id: 'allotment', label: '6. Allotment Status' },
     { id: 'faq', label: '7. Hindi FAQs' },
   ];
 
+  const subscriptionBlock = (
+    <section className="space-y-3">
+      <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+        📈 {ipo.company_name} IPO Live Subscription Status
+      </h3>
+      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+        <table className="w-full text-xs sm:text-sm text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th className="py-2.5 px-4 font-bold">Investor Category</th>
+              <th className="py-2.5 px-4 font-bold text-right">Subscription (Times)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            <tr>
+              <td className="py-2.5 px-4 font-medium">Qualified Institutional Buyers (QIB)</td>
+              <td className="py-2.5 px-4 text-right font-semibold">
+                {Number(ipo.qib_sub || 0).toFixed(2)}x
+              </td>
+            </tr>
+            <tr className="bg-slate-50/70">
+              <td className="py-2.5 px-4 font-medium">Non-Institutional Investors (NII / HNI)</td>
+              <td className="py-2.5 px-4 text-right font-semibold">
+                {Number(ipo.nii_sub || 0).toFixed(2)}x
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2.5 px-4 font-medium">Retail Individual Investors (RII)</td>
+              <td className="py-2.5 px-4 text-right font-semibold">
+                {Number(ipo.retail_sub || 0).toFixed(2)}x
+              </td>
+            </tr>
+            <tr className="bg-emerald-50 font-bold text-emerald-900">
+              <td className="py-2.5 px-4">Total Subscription</td>
+              <td className="py-2.5 px-4 text-right">{Number(ipo.total_sub || 0).toFixed(2)}x</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+
+  const gmpHistoryBlock = (
+    <section className="space-y-3">
+      <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+        💹 {ipo.company_name} GMP Today — Date-Wise Grey Market Premium
+      </h3>
+      <p className="text-xs sm:text-sm text-slate-600">
+        ऊपरी प्राइस बैंड ₹{upperPrice} के हिसाब से आज का लाइव GMP <strong>₹{gmp}</strong> है, जिससे अनुमानित
+        लिस्टिंग कीमत <strong>₹{upperPrice + gmp}</strong> (
+        {upperPrice > 0 ? `${((gmp / upperPrice) * 100).toFixed(2)}%` : '0.00%'}) बनती है।
+      </p>
+      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+        <table className="w-full text-xs sm:text-sm text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <th className="py-2.5 px-4 font-bold">Date</th>
+              <th className="py-2.5 px-4 font-bold">IPO Price</th>
+              <th className="py-2.5 px-4 font-bold">Live GMP</th>
+              <th className="py-2.5 px-4 font-bold">Est. Listing Price</th>
+              <th className="py-2.5 px-4 font-bold">Est. Profit</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {gmpHistory.length > 0 ? (
+              gmpHistory.map((row, i) => {
+                const rowGmp = Number(row.gmp_price) || 0;
+                const est = upperPrice + rowGmp;
+                const pct = upperPrice > 0 ? ((rowGmp / upperPrice) * 100).toFixed(2) : '0.00';
+                return (
+                  <tr key={i} className="hover:bg-slate-50">
+                    <td className="py-2.5 px-4 font-medium">
+                      {formatShortDate(row.gmp_date || row.recorded_date)}
+                    </td>
+                    <td className="py-2.5 px-4">₹{upperPrice}</td>
+                    <td className="py-2.5 px-4 font-bold text-emerald-700">+₹{rowGmp}</td>
+                    <td className="py-2.5 px-4">
+                      ₹{est} ({pct}%)
+                    </td>
+                    <td className="py-2.5 px-4 font-semibold">
+                      {lotSize > 0 ? `₹${(rowGmp * lotSize).toLocaleString('en-IN')}` : '—'}
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td className="py-2.5 px-4 font-medium">Today (Live)</td>
+                <td className="py-2.5 px-4">₹{upperPrice}</td>
+                <td className="py-2.5 px-4 font-bold text-emerald-700">+₹{gmp}</td>
+                <td className="py-2.5 px-4">
+                  ₹{upperPrice + gmp} ({upperPrice > 0 ? `${((gmp / upperPrice) * 100).toFixed(2)}%` : '0.00%'})
+                </td>
+                <td className="py-2.5 px-4 font-semibold">
+                  {lotSize > 0 ? `₹${(gmp * lotSize).toLocaleString('en-IN')}` : '—'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+
   const prosAndConsBlock = (
-    <section className="space-y-4 pt-2">
+    <section className="space-y-4">
       <div>
         <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
           ⚖️ {ipo.company_name} IPO Pros &amp; Cons (सकारात्मक पक्ष और जोखिम)
@@ -236,6 +354,62 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
     </section>
   );
 
+  const allotmentBlock = (
+    <section className="space-y-3">
+      <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+        🧾 {ipo.company_name} IPO Allotment Status कैसे चेक करें?
+      </h3>
+      <ol className="list-decimal pl-5 space-y-2 text-xs sm:text-sm text-slate-700">
+        <li>
+          आधिकारिक रजिस्ट्रार (<strong>Link Intime / KFinTech / Bigshare</strong>) की वेबसाइट पर जाएं।
+        </li>
+        <li>
+          ड्रॉपडाउन सूची से <strong>{ipo.company_name}</strong> चुनें।
+        </li>
+        <li>
+          अपना <strong>PAN Number</strong>, Application Number या DP/Client ID दर्ज करें।
+        </li>
+        <li>
+          <strong>Submit</strong> पर क्लिक करते ही आपका अलॉटमेंट स्टेटस स्क्रीन पर दिख जाएगा।
+        </li>
+      </ol>
+    </section>
+  );
+
+  const faqBlock = (
+    <section className="space-y-3 text-xs sm:text-sm text-slate-800">
+      <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+        ❓ {ipo.company_name} IPO — अक्सर पूछे जाने वाले सवाल (FAQs)
+      </h3>
+      <div className="border-b border-slate-200 pb-3">
+        <p className="font-bold text-slate-900">
+          Q1. {ipo.company_name} IPO का आज का GMP क्या है?
+        </p>
+        <p className="mt-1">
+          आज {ipo.company_name} IPO का लाइव GMP <strong>₹{gmp}</strong> चल रहा है।
+        </p>
+      </div>
+      <div className="border-b border-slate-200 pb-3">
+        <p className="font-bold text-slate-900">
+          Q2. {ipo.company_name} IPO का प्राइस बैंड और लॉट साइज़ क्या है?
+        </p>
+        <p className="mt-1">
+          इसका प्राइस बैंड ₹{lowerPrice} - ₹{upperPrice} प्रति शेयर है और 1 लॉट में{' '}
+          {lotSize > 0 ? `${lotSize} शेयर` : 'निर्धारित शेयर'} हैं।
+        </p>
+      </div>
+      <div>
+        <p className="font-bold text-slate-900">
+          Q3. {ipo.company_name} IPO की अलॉटमेंट और लिस्टिंग तारीख़ क्या है?
+        </p>
+        <p className="mt-1">
+          अलॉटमेंट <strong>{formatShortDate(ipo.allotment_date)}</strong> को और लिस्टिंग{' '}
+          <strong>{formatShortDate(ipo.listing_date)}</strong> को प्रस्तावित है।
+        </p>
+      </div>
+    </section>
+  );
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Navigation Tabs */}
@@ -257,7 +431,7 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
 
       {/* Tab Content Area */}
       <div className="p-5 sm:p-6">
-        {/* TAB 1: 700-WORD HINDI BLOG + 6-7 PROS & CONS + 3-YEAR FINANCIAL CHART */}
+        {/* TAB 1: FULL ORDERED FLOW (Blog -> Subscription -> GMP History -> Financials -> Pros/Cons -> Allotment -> FAQs) */}
         {activeTab === 'overview' && (
           <div className="space-y-8">
             <article className="space-y-4 text-sm sm:text-[15px] leading-7 text-slate-800">
@@ -299,117 +473,32 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
               )}
             </article>
 
-            {/* 6-7 Bullets Pros & Cons directly below Blog */}
-            {prosAndConsBlock}
-
-            {/* 3-Year Revenue & Profit Chart + Table below Pros & Cons */}
+            {subscriptionBlock}
+            {gmpHistoryBlock}
             <FinancialsChartSection companyName={ipo.company_name} financials={ipo.financials_json} />
+            {prosAndConsBlock}
+            {allotmentBlock}
+            {faqBlock}
           </div>
         )}
 
-        {/* TAB 2: LIVE GMP HISTORY */}
-        {activeTab === 'gmp' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-slate-900">
-              {ipo.company_name} GMP Today — Date-Wise Grey Market Premium
-            </h2>
-            <p className="text-sm text-slate-600">
-              ऊपरी प्राइस बैंड ₹{upperPrice} के हिसाब से आज का लाइव GMP <strong>₹{gmp}</strong> है, जिससे अनुमानित
-              लिस्टिंग कीमत <strong>₹{upperPrice + gmp}</strong> (
-              {upperPrice > 0 ? `${((gmp / upperPrice) * 100).toFixed(2)}%` : '0.00%'}) बनती है।
-            </p>
-            <div className="overflow-x-auto border border-slate-200 rounded-lg">
-              <table className="w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                    <th className="py-2.5 px-4 font-bold">Date</th>
-                    <th className="py-2.5 px-4 font-bold">IPO Price</th>
-                    <th className="py-2.5 px-4 font-bold">Live GMP</th>
-                    <th className="py-2.5 px-4 font-bold">Est. Listing Price</th>
-                    <th className="py-2.5 px-4 font-bold">Est. Profit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {gmpHistory.length > 0 ? (
-                    gmpHistory.map((row, i) => {
-                      const rowGmp = Number(row.gmp_price) || 0;
-                      const est = upperPrice + rowGmp;
-                      const pct = upperPrice > 0 ? ((rowGmp / upperPrice) * 100).toFixed(2) : '0.00';
-                      return (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="py-2.5 px-4 font-medium">
-                            {formatShortDate(row.gmp_date || row.recorded_date)}
-                          </td>
-                          <td className="py-2.5 px-4">₹{upperPrice}</td>
-                          <td className="py-2.5 px-4 font-bold text-emerald-700">+₹{rowGmp}</td>
-                          <td className="py-2.5 px-4">
-                            ₹{est} ({pct}%)
-                          </td>
-                          <td className="py-2.5 px-4 font-semibold">
-                            {lotSize > 0 ? `₹${(rowGmp * lotSize).toLocaleString('en-IN')}` : '—'}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td className="py-2.5 px-4 font-medium">Today (Live)</td>
-                      <td className="py-2.5 px-4">₹{upperPrice}</td>
-                      <td className="py-2.5 px-4 font-bold text-emerald-700">+₹{gmp}</td>
-                      <td className="py-2.5 px-4">
-                        ₹{upperPrice + gmp} ({upperPrice > 0 ? `${((gmp / upperPrice) * 100).toFixed(2)}%` : '0.00%'})
-                      </td>
-                      <td className="py-2.5 px-4 font-semibold">
-                        {lotSize > 0 ? `₹${(gmp * lotSize).toLocaleString('en-IN')}` : '—'}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: LIVE SUBSCRIPTION */}
+        {/* TAB 2: LIVE SUBSCRIPTION */}
         {activeTab === 'subscription' && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
               {ipo.company_name} IPO Live Subscription Status (Day-Wise)
             </h2>
-            <div className="overflow-x-auto border border-slate-200 rounded-lg">
-              <table className="w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
-                    <th className="py-2.5 px-4 font-bold">Investor Category</th>
-                    <th className="py-2.5 px-4 font-bold text-right">Subscription (Times)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  <tr>
-                    <td className="py-2.5 px-4 font-medium">Qualified Institutional Buyers (QIB)</td>
-                    <td className="py-2.5 px-4 text-right font-semibold">
-                      {Number(ipo.qib_sub || 0).toFixed(2)}x
-                    </td>
-                  </tr>
-                  <tr className="bg-slate-50/70">
-                    <td className="py-2.5 px-4 font-medium">Non-Institutional Investors (NII / HNI)</td>
-                    <td className="py-2.5 px-4 text-right font-semibold">
-                      {Number(ipo.nii_sub || 0).toFixed(2)}x
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="py-2.5 px-4 font-medium">Retail Individual Investors (RII)</td>
-                    <td className="py-2.5 px-4 text-right font-semibold">
-                      {Number(ipo.retail_sub || 0).toFixed(2)}x
-                    </td>
-                  </tr>
-                  <tr className="bg-emerald-50 font-bold text-emerald-900">
-                    <td className="py-2.5 px-4">Total Subscription</td>
-                    <td className="py-2.5 px-4 text-right">{Number(ipo.total_sub || 0).toFixed(2)}x</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {subscriptionBlock}
+          </div>
+        )}
+
+        {/* TAB 3: LIVE GMP HISTORY */}
+        {activeTab === 'gmp' && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              {ipo.company_name} GMP Today — Date-Wise Grey Market Premium
+            </h2>
+            {gmpHistoryBlock}
           </div>
         )}
 
@@ -495,61 +584,22 @@ export default function IpoTabsClient({ ipo, gmpHistory = [] }) {
         {activeTab === 'allotment' && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
-              {ipo.company_name} IPO Allotment Status कैसे चेक करें?
+              {ipo.company_name} IPO Allotment Status
             </h2>
-            <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-700">
-              <li>
-                आधिकारिक रजिस्ट्रार (<strong>Link Intime / KFinTech / Bigshare</strong>) की वेबसाइट पर जाएं।
-              </li>
-              <li>
-                ड्रॉपडाउन सूची से <strong>{ipo.company_name}</strong> चुनें।
-              </li>
-              <li>
-                अपना <strong>PAN Number</strong>, Application Number या DP/Client ID दर्ज करें।
-              </li>
-              <li>
-                <strong>Submit</strong> पर क्लिक करते ही आपका अलॉटमेंट स्टेटस स्क्रीन पर दिख जाएगा।
-              </li>
-            </ol>
+            {allotmentBlock}
           </div>
         )}
 
         {/* TAB 7: HINDI FAQS */}
         {activeTab === 'faq' && (
-          <div className="space-y-4 text-sm text-slate-800">
+          <div className="space-y-4">
             <h2 className="text-lg font-bold text-slate-900">
-              {ipo.company_name} IPO — अक्सर पूछे जाने वाले सवाल (FAQs)
+              {ipo.company_name} IPO FAQs
             </h2>
-            <div className="border-b border-slate-200 pb-3">
-              <p className="font-bold text-slate-900">
-                Q1. {ipo.company_name} IPO का आज का GMP क्या है?
-              </p>
-              <p className="mt-1">
-                आज {ipo.company_name} IPO का लाइव GMP <strong>₹{gmp}</strong> चल रहा है।
-              </p>
-            </div>
-            <div className="border-b border-slate-200 pb-3">
-              <p className="font-bold text-slate-900">
-                Q2. {ipo.company_name} IPO का प्राइस बैंड और लॉट साइज़ क्या है?
-              </p>
-              <p className="mt-1">
-                इसका प्राइस बैंड ₹{lowerPrice} - ₹{upperPrice} प्रति शेयर है और 1 लॉट में{' '}
-                {lotSize > 0 ? `${lotSize} शेयर` : 'निर्धारित शेयर'} हैं।
-              </p>
-            </div>
-            <div>
-              <p className="font-bold text-slate-900">
-                Q3. {ipo.company_name} IPO की अलॉटमेंट और लिस्टिंग तारीख़ क्या है?
-              </p>
-              <p className="mt-1">
-                अलॉटमेंट <strong>{formatShortDate(ipo.allotment_date)}</strong> को और लिस्टिंग{' '}
-                <strong>{formatShortDate(ipo.listing_date)}</strong> को प्रस्तावित है।
-              </p>
-            </div>
+            {faqBlock}
           </div>
         )}
       </div>
     </div>
   );
 }
-
