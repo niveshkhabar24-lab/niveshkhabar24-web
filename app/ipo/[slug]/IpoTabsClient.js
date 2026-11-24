@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 function formatShortDate(dateStr) {
   if (!dateStr) return 'Announced Soon';
   const d = new Date(`${dateStr}T00:00:00`);
@@ -177,6 +179,14 @@ export default function IpoTabsClient({
   activeTabParam = null,
   basePath = '',
 }) {
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    if (activeTabParam && panelRef.current) {
+      panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [activeTabParam]);
+
   const lowerPrice = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
   const upperPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
   const lotSize = Number(ipo.lot_size) || 0;
@@ -195,11 +205,15 @@ export default function IpoTabsClient({
     : [];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div
+      ref={panelRef}
+      key={activeTabParam || 'default'}
+      className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden scroll-mt-4"
+    >
       {activeTabParam && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 bg-teal-50/70 border-b border-teal-200">
           <span className="text-xs sm:text-sm font-bold text-teal-900 uppercase tracking-wide">
-            Section View: {activeTabParam}
+            Active Tab View: {activeTabParam}
           </span>
           <a
             href={basePath || `/ipo/${ipo.slug}`}
