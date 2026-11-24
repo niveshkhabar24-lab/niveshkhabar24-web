@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function formatShortDate(dateStr) {
   if (!dateStr) return 'Announced Soon';
@@ -218,6 +218,14 @@ export default function IpoTabsClient({
   activeTabParam = null,
   basePath = '',
 }) {
+  const tabSectionRef = useRef(null);
+
+  useEffect(() => {
+    if (activeTabParam && tabSectionRef.current) {
+      tabSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [activeTabParam]);
+
   const lowerPrice = Number(ipo.issue_price_min ?? ipo.price_min ?? 0);
   const upperPrice = Number(ipo.issue_price_max ?? ipo.price_max ?? 0);
   const lotSize = Number(ipo.lot_size) || 0;
@@ -239,7 +247,10 @@ export default function IpoTabsClient({
     <div className="space-y-6">
       {/* DEDICATED TAB VIEW (GMP / Subscription / Allotment) */}
       {activeTabParam && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          ref={tabSectionRef}
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden scroll-mt-4"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 bg-teal-50/70 border-b border-teal-200">
             <span className="text-xs sm:text-sm font-bold text-teal-900 uppercase tracking-wide">
               Active Tab View: {activeTabParam}
