@@ -16,6 +16,118 @@ function formatBoxDate(dateStr) {
   return `${String(d.getDate()).padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+function buildLotSizeRows(category, lotSize, maxPrice) {
+  if (!lotSize || lotSize <= 0 || !maxPrice || maxPrice <= 0) {
+    return [];
+  }
+
+  const oneLotAmount = lotSize * maxPrice;
+  const isSME = String(category || '').toLowerCase().includes('sme');
+
+  if (isSME) {
+    const hniMinLots = oneLotAmount > 200000 ? 1 : 2;
+    return [
+      {
+        application: 'Retail (Min)',
+        lots: 1,
+        shares: lotSize,
+        amount: oneLotAmount,
+      },
+      {
+        application: 'HNI / NII (Min)',
+        lots: hniMinLots,
+        shares: hniMinLots * lotSize,
+        amount: hniMinLots * oneLotAmount,
+      },
+    ];
+  }
+
+  // Mainboard SEBI rules: Retail <= ₹2,00,000 | S-HNI: ₹2L to ₹10L | B-HNI: > ₹10L
+  const retailMaxLots = Math.max(1, Math.floor(200000 / oneLotAmount));
+  const sHniMinLots = retailMaxLots + 1;
+  const sHniMaxLots = Math.max(sHniMinLots, Math.floor(1000000 / oneLotAmount));
+  const bHniMinLots = sHniMaxLots + 1;
+
+  return [
+    {
+      application: 'Retail (Min)',
+      lots: 1,
+      shares: lotSize,
+      amount: oneLotAmount,
+    },
+    {
+      application: 'Retail (Max)',
+      lots: retailMaxLots,
+      shares: retailMaxLots * lotSize,
+      amount: retailMaxLots * oneLotAmount,
+    },
+    {
+      application: 'S-HNI (Min)',
+      lots: sHniMinLots,
+      shares: sHniMinLots * lotSize,
+      amount: sHniMinLots * oneLotAmount,
+    },
+    {
+      application: 'S-HNI (Max)',
+      lots: sHniMaxLots,
+      shares: sHniMaxLots * lotSize,
+      amount: sHniMaxLots * oneLotAmount,
+    },
+    {
+      application: 'B-HNI (Min)',
+      lots: bHniMinLots,
+      shares: bHniMinLots * lotSize,
+      amount: bHniMinLots * oneLotAmount,
+    },
+  ];
+}
+
+function buildReservationRows(ipo) {
+  const isSME = String(ipo.category || '').toLowerCase().includes('sme');
+
+  // If custom quotas exist in DB, use them; otherwise use standard SEBI allocation
+  const hasDbQuotas =
+    ipo.qib_quota != null || ipo.nii_quota != null || ipo.retail_quota != null;
+
+  if (hasDbQuotas) {
+    const rows = [];
+    if (ipo.market_maker_quota != null && Number(ipo.market_maker_quota) > 0) {
+      rows.push({ category: 'Market Maker Shares', percent: `${Number(ipo.market_maker_quota).toFixed(2)}%` });
+    }
+    if (ipo.qib_quota != null) {
+      rows.push({ category: 'QIB Shares Offered', percent: `${Number(ipo.qib_quota).toFixed(2)}%` });
+    }
+    if (ipo.nii_quota != null) {
+      rows.push({ category: 'NII (HNI) Shares Offered', percent: `${Number(ipo.nii_quota).toFixed(2)}%` });
+    }
+    if (ipo.retail_quota != null) {
+      rows.push({ category: 'Retail Shares Offered', percent: `${Number(ipo.retail_quota).toFixed(2)}%` });
+    }
+    if (ipo.shareholder_quota != null && Number(ipo.shareholder_quota) > 0) {
+      rows.push({ category: 'Shareholder Quota', percent: `${Number(ipo.shareholder_quota).toFixed(2)}%` });
+    }
+    rows.push({ category: 'Total Shares Offered', percent: '100.00%', isTotal: true });
+    return rows;
+  }
+
+  if (isSME) {
+    return [
+      { category: 'Market Maker Shares', percent: '5.00%' },
+      { category: 'QIB Shares Offered', percent: '47.50%' },
+      { category: 'NII (HNI) Shares Offered', percent: '14.25%' },
+      { category: 'Retail Shares Offered', percent: '33.25%' },
+      { category: 'Total Shares Offered', percent: '100.00%', isTotal: true },
+    ];
+  }
+
+  return [
+    { category: 'QIB Shares Offered', percent: 'Not more than 50.00%' },
+    { category: 'NII (HNI) Shares Offered', percent: 'Not less than 15.00%' },
+    { category: 'Retail Shares Offered', percent: 'Not less than 35.00%' },
+    { category: 'Total Shares Offered', percent: '100.00%', isTotal: true },
+  ];
+}
+
 async function getIPOBySlug(slug) {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -82,6 +194,9 @@ export default async function IPODetailPage({ params }) {
   const oneLotProfit = gmp * lotSize;
   const minInvestment = maxPrice * lotSize;
   const formattedTotalSub = Number(ipo.total_sub || 0).toFixed(2);
+
+  const lotSizeRows = buildLotSizeRows(ipo.category, lotSize, maxPrice);
+  const reservationRows = buildReservationRows(ipo);
 
   // Fallback logo using UI-Avatars if logo_url is empty
   const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -250,7 +365,97 @@ export default async function IPODetailPage({ params }) {
         </div>
       </header>
 
-      {/* AD / BANNER SLOT #1 (Below Date & Metric Boxes) */}
+      {/* 3.5 SIDE-BY-SIDE LOT SIZE & RESERVATION TABLES (Home Page Style) */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* LEFT TABLE: IPO LOT SIZE */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-teal-800 text-white px-4 py-3 flex items-center justify-between">
+            <h2 className="text-sm sm:text-base font-bold">
+              {ipo.company_name} IPO Lot Size
+            </h2>
+            <span className="text-[11px] bg-teal-700 px-2.5 py-0.5 rounded-full font-semibold">
+              {ipo.category || 'Mainboard'}
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs sm:text-sm">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                  <th className="py-2.5 px-3 font-bold">Application</th>
+                  <th className="py-2.5 px-3 font-bold text-center">Lots</th>
+                  <th className="py-2.5 px-3 font-bold text-center">Shares</th>
+                  <th className="py-2.5 px-3 font-bold text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {lotSizeRows.length > 0 ? (
+                  lotSizeRows.map((row) => (
+                    <tr key={row.application} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">
+                        {row.application}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-slate-700">
+                        {row.lots}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-slate-700">
+                        {row.shares.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-slate-900">
+                        ₹{row.amount.toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="py-6 px-4 text-center text-slate-500 text-xs">
+                      Price band &amp; lot size details will be updated soon.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* RIGHT TABLE: IPO RESERVATION (%) */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+            <h2 className="text-sm sm:text-base font-bold">
+              {ipo.company_name} IPO Reservation (%)
+            </h2>
+            <span className="text-[11px] bg-slate-700 px-2.5 py-0.5 rounded-full font-semibold">
+              Quota Breakdown
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs sm:text-sm">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                  <th className="py-2.5 px-4 font-bold">Investor Category</th>
+                  <th className="py-2.5 px-4 font-bold text-right">Shares Offered (%)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {reservationRows.map((row) => (
+                  <tr
+                    key={row.category}
+                    className={row.isTotal ? 'bg-slate-50 font-bold' : 'hover:bg-slate-50'}
+                  >
+                    <td className="py-2.5 px-4 text-slate-800">{row.category}</td>
+                    <td className="py-2.5 px-4 text-right font-semibold text-slate-900">
+                      {row.percent}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* AD / BANNER SLOT #1 (Below Lot & Reservation Tables) */}
       <div
         id="nk24-ad-top-banner"
         className="w-full min-h-[70px] bg-slate-100/80 border border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center p-3 text-center"
